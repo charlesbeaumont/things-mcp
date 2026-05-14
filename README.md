@@ -1,6 +1,6 @@
 # things-mcp
 
-A clean Things 3 MCP server. Compiled to a single Bun binary — no `uv`, no `npx`, no permission-prompt-per-startup.
+A Things 3 MCP server compiled to a single Bun binary.
 
 ## What it does
 
@@ -11,37 +11,21 @@ A clean Things 3 MCP server. Compiled to a single Bun binary — no `uv`, no `np
 
 SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) (MIT).
 
-## Build
-
-```bash
-bun install
-bun run build           # → bin/things-mcp (arm64, ~58 MB)
-```
-
 ## Install
 
-**Prerequisites** (one-time):
+Make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
 
-1. **Enable the Things URL scheme.** Things → Settings → General → "Enable Things URLs". Without this, all writes silently no-op.
-2. **De-quarantine the binary.** macOS Gatekeeper quarantines unsigned compiled binaries, so first-run will fail with "cannot be opened":
-   ```bash
-   xattr -d com.apple.quarantine bin/things-mcp
-   ```
-   (Or right-click → Open once from Finder.)
-
-**Wire up the MCP client.** For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "things": {
-      "command": "/Users/charles/Workspace/things-mcp/bin/things-mcp"
-    }
-  }
-}
+```bash
+git clone https://github.com/charlesbeaumont/things-mcp.git
+cd things-mcp
+./install.sh
 ```
 
-Restart Claude Desktop. One Claude permission prompt approves the binary path; after that, no further prompts.
+`install.sh` builds the binary, strips the macOS quarantine flag, and prints the JSON snippet to add to your MCP client config.
+
+You also need to enable the Things URL scheme once: **Things → Settings → General → "Enable Things URLs"**. Without it, all writes silently no-op.
+
+For Claude Desktop, paste the snippet from `install.sh` into `~/Library/Application Support/Claude/claude_desktop_config.json` under `mcpServers`, then restart Claude Desktop.
 
 ## Bulk editing
 
