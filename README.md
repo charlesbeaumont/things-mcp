@@ -20,7 +20,16 @@ bun run build           # → bin/things-mcp (arm64, ~58 MB)
 
 ## Install
 
-Point your MCP client at the binary path. For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Prerequisites** (one-time):
+
+1. **Enable the Things URL scheme.** Things → Settings → General → "Enable Things URLs". Without this, all writes silently no-op.
+2. **De-quarantine the binary.** macOS Gatekeeper quarantines unsigned compiled binaries, so first-run will fail with "cannot be opened":
+   ```bash
+   xattr -d com.apple.quarantine bin/things-mcp
+   ```
+   (Or right-click → Open once from Finder.)
+
+**Wire up the MCP client.** For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -32,7 +41,7 @@ Point your MCP client at the binary path. For Claude Desktop, edit `~/Library/Ap
 }
 ```
 
-Restart Claude Desktop. macOS will prompt once to approve the binary; after that, no further prompts.
+Restart Claude Desktop. One Claude permission prompt approves the binary path; after that, no further prompts.
 
 ## Bulk editing
 

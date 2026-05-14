@@ -21,6 +21,34 @@ function calculateAge(dateStr: string): string {
   return `${years} year${years > 1 ? "s" : ""} ago`;
 }
 
+function todayLocalIso(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Compute the bucket Things actually shows the task in, not the raw `start`
+ * column. Raw start is just Inbox/Anytime/Someday; the UI buckets are
+ * Inbox/Today/Upcoming/Anytime/Someday and derive from start + startDate.
+ */
+function effectiveListLabel(todo: Task): { label: string; inherited: boolean } | null {
+  if (!todo.start) return null;
+  const parentStart = todo.project_start ?? todo.project_of_heading_start ?? null;
+  if (parentStart === "Someday" && todo.start !== "Someday") {
+    return { label: "Someday", inherited: true };
+  }
+  if (todo.start === "Inbox") return { label: "Inbox", inherited: false };
+  if (todo.start_date) {
+    const today = todayLocalIso();
+    if (todo.start_date <= today) return { label: "Today", inherited: false };
+    if (todo.start === "Someday") return { label: "Upcoming", inherited: false };
+  }
+  return { label: todo.start, inherited: false };
+}
+
 export function formatTodo(_db: ThingsDB, todo: Task): string {
   const lines: string[] = [];
   lines.push(`Title: ${todo.title}`);
@@ -32,14 +60,14 @@ export function formatTodo(_db: ThingsDB, todo: Task): string {
   // - direct project: TASK.project -> PROJECT.{uuid,title,start}
   // - via heading: HEADING.project -> PROJECT_OF_HEADING.{uuid,title,start}
   const parentTitle = todo.project_title ?? todo.project_of_heading_title ?? null;
-  const parentStart = todo.project_start ?? todo.project_of_heading_start ?? null;
 
-  if (todo.start) {
-    if (todo.start !== "Someday" && parentStart === "Someday") {
-      lines.push("List: Someday (inherited from project)");
-    } else {
-      lines.push(`List: ${todo.start}`);
-    }
+  const eff = effectiveListLabel(todo);
+  if (eff) {
+    lines.push(
+      eff.inherited
+        ? `List: ${eff.label} (inherited from project)`
+        : `List: ${eff.label}`,
+    );
   }
 
   if (todo.start_date) lines.push(`Start Date: ${todo.start_date}`);

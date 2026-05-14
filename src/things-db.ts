@@ -274,6 +274,7 @@ export interface TaskQuery {
 export class ThingsDB {
   private db: Database;
   private cachedToken: string | null | undefined = undefined;
+  private cachedGroupTodayByParent: boolean | undefined = undefined;
 
   constructor(filepath?: string) {
     const path = filepath ?? findDatabasePath();
@@ -447,6 +448,19 @@ export class ThingsDB {
     return this.cachedToken;
   }
 
+  // Things has a user-toggleable "Group Today by Project" preference. When on,
+  // the Today view shows tasks grouped under their parent project or area
+  // instead of a flat list. We mirror that grouping in `today()`.
+  getGroupTodayByParent(): boolean {
+    if (this.cachedGroupTodayByParent !== undefined)
+      return this.cachedGroupTodayByParent;
+    const row = this.db
+      .query("SELECT groupTodayByParent FROM TMSettings LIMIT 1")
+      .get() as { groupTodayByParent: number | null } | undefined;
+    this.cachedGroupTodayByParent = row?.groupTodayByParent === 1;
+    return this.cachedGroupTodayByParent;
+  }
+
   // --- Hydration ---
 
   /**
@@ -517,7 +531,10 @@ export class ThingsDB {
       const bd = b.start_date ?? "";
       return ad < bd ? -1 : ad > bd ? 1 : 0;
     });
-    return this.hydrateTasks(result, includeItems);
+    const ordered = this.getGroupTodayByParent()
+      ? groupTodayByParent(result)
+      : result;
+    return this.hydrateTasks(ordered, includeItems);
   }
 
   upcoming(includeItems = true): Task[] {
@@ -605,4 +622,34 @@ export class ThingsDB {
       includeItems,
     );
   }
+}
+
+// Re-order tasks to mirror Things' "Group Today by Project" view:
+//   1. All tasks with a parent project (direct or via heading) come first
+//   2. Then all tasks with an area parent
+//   3. Then orphan tasks
+//   Groups within each tier are sorted by the MIN `index` of their tasks
+//   (matches Things UI empirically). Within-group order is preserved.
+function groupTodayByParent(tasks: Task[]): Task[] {
+  type Group = { tier: number; uuid: string; minIndex: number; tasks: Task[] };
+  const groups = new Map<string, Group>();
+  for (const t of tasks) {
+    const projectUuid = t.project ?? t.project_of_heading ?? null;
+    const tier = projectUuid ? 0 : t.area ? 1 : 2;
+    const uuid = projectUuid ?? t.area ?? "";
+    const k = `${tier}:${uuid}`;
+    const idx = t.index ?? Number.MAX_SAFE_INTEGER;
+    const existing = groups.get(k);
+    if (existing) {
+      existing.tasks.push(t);
+      if (idx < existing.minIndex) existing.minIndex = idx;
+    } else {
+      groups.set(k, { tier, uuid, minIndex: idx, tasks: [t] });
+    }
+  }
+  const sorted = Array.from(groups.values()).sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    return a.minIndex - b.minIndex;
+  });
+  return sorted.flatMap((g) => g.tasks);
 }

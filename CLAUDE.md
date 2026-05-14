@@ -24,9 +24,15 @@ src/types.ts          Task/Area/Tag types
 1. **Reads**: open `~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite` in `readonly: true` mode. Schema tables: `TMTask`, `TMArea`, `TMTag`, `TMTaskTag`, `TMAreaTag`, `TMChecklistItem`, `TMSettings`.
 2. **Writes**: invoke `things:///add`, `things:///update`, `things:///json` via `osascript -e 'do shell script "open -g \"URL\""'`. Update operations require the auth-token read from `TMSettings.uriSchemeAuthenticationToken` (singleton row `uuid = 'RhAzEf6qDxCD5PmnZVtBZR'`).
 
-**Bulk editing** (the thing hald doesn't have): `bulk_add_todos` and `bulk_update_todos` compile their input arrays into a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling.
+**Bulk editing** (the thing hald doesn't have): `bulk_add_todos` and `bulk_update_todos` compile their input arrays into a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling. For `/json` update operations, `auth-token` goes at the URL level (not per-item) — empirically confirmed during Phase 2 testing.
+
+**Write→read timing**: URL-scheme writes are fire-and-forget, but Things processes them essentially synchronously — empirically the new row is visible in SQLite within ~325 ms of `executeUrl` returning (faster than the MCP roundtrip itself). No post-write sleep is needed; an immediate `get_today` after `add_todo` will see the new task. If this ever changes, look in [src/things-url.ts:executeUrl](src/things-url.ts).
 
 **Someday filter**: Things UI hides tasks inside Someday-marked projects from Today/Upcoming/Anytime. The SQLite schema doesn't inherit this — we replicate it client-side in [src/someday-filter.ts](src/someday-filter.ts). The cache is invalidated after any write.
+
+**Today grouping**: When `TMSettings.groupTodayByParent = 1` (a user preference toggleable in Things) the Today view groups tasks by parent project/area instead of showing a flat list. `db.today()` mirrors this. Group ordering rule, reverse-engineered from the live UI: projects tier first, then areas tier, then orphans; within each tier groups sort by the MIN `index` of their constituent tasks (NOT by the parent's own index, and NOT by `todayIndex`). Within a group, tasks keep the `todayIndex` order. See `groupTodayByParent()` at the bottom of [src/things-db.ts](src/things-db.ts).
+
+**Effective list label**: the `start` column only encodes Inbox/Anytime/Someday — Things' visible buckets also include Today and Upcoming, derived from `start` + `startDate`. `effectiveListLabel()` in [src/formatters.ts](src/formatters.ts) maps to what the UI shows, so output reads "List: Today" for a task scheduled today even though its raw start is Anytime/Someday.
 
 ## Build & test loop
 
