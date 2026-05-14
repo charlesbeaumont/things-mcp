@@ -29,12 +29,39 @@ import type { TaskStatus, TaskType } from "./types.ts";
 type Args = Record<string, unknown>;
 type Handler = (args: Args) => string;
 
+interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface ToolDef {
   name: string;
   description: string;
   inputSchema: object;
+  annotations?: ToolAnnotations;
   handler: Handler;
 }
+
+// All tools touch a local SQLite DB or the local Things URL scheme — never the network.
+const LOCAL = { openWorldHint: false } as const;
+const READ: ToolAnnotations = { readOnlyHint: true, ...LOCAL };
+const CREATE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  ...LOCAL,
+};
+const UPDATE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  ...LOCAL,
+};
+// show_item / search_items launch the Things UI but don't mutate data.
+const UI: ToolAnnotations = { readOnlyHint: true, ...LOCAL };
 
 function reqString(args: Args, key: string): string {
   const v = args[key];
@@ -76,16 +103,19 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_inbox",
-    description: "Get todos from Inbox",
+    description: "Get todos from Inbox (unsorted captures with no list assigned).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () =>
       joinFormatted(db.inbox().map((t) => formatTodo(db, t))),
   });
 
   tools.push({
     name: "get_today",
-    description: "Get todos due today",
+    description:
+      "Get the Today list — scheduled for today, plus past-due scheduled tasks and past-deadline tasks. Output mirrors the Things UI grouping (by parent project/area) when that setting is enabled.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () => {
       const todos = filterSomedayProjectTasks(db, db.today());
       return joinFormatted(todos.map((t) => formatTodo(db, t)));
@@ -94,8 +124,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_upcoming",
-    description: "Get upcoming todos",
+    description: "Get tasks scheduled for future dates (Things' Upcoming view).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () => {
       const todos = filterSomedayProjectTasks(db, db.upcoming());
       return joinFormatted(todos.map((t) => formatTodo(db, t)));
@@ -104,8 +135,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_anytime",
-    description: "Get todos from Anytime list",
+    description: "Get the Anytime list — tasks ready to do with no specific schedule.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () => {
       const todos = filterSomedayProjectTasks(db, db.anytime());
       return joinFormatted(todos.map((t) => formatTodo(db, t)));
@@ -114,8 +146,10 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_someday",
-    description: "Get todos from Someday list, including tasks in Someday projects",
+    description:
+      "Get the Someday list — deferred tasks. Includes tasks living inside projects marked Someday (which the raw SQL would otherwise miss).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () => {
       const someday = db.someday();
       const anytime = db.anytime();
@@ -127,7 +161,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
   tools.push({
     name: "get_logbook",
     description:
-      "Get completed todos from Logbook (defaults to last 7 days, max 50)",
+      "Get completed and canceled tasks from the Logbook over a time period (defaults to last 7 days, max 50 items).",
     inputSchema: {
       type: "object",
       properties: {
@@ -136,6 +170,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const period = optString(a, "period") ?? "7d";
       const limit = typeof a.limit === "number" ? a.limit : 50;
@@ -146,14 +181,15 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_trash",
-    description: "Get trashed todos",
+    description: "Get trashed todos.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ,
     handler: () => joinFormatted(db.trash().map((t) => formatTodo(db, t))),
   });
 
   tools.push({
     name: "get_todos",
-    description: "Get todos from Things, optionally filtered by project",
+    description: "Get all todos, optionally filtered to a single project by UUID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -162,6 +198,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const projectUuid = optString(a, "project_uuid");
       const includeItems = optBool(a, "include_items") ?? true;
@@ -177,7 +214,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_projects",
-    description: "Get all projects from Things",
+    description: "Get all active projects.",
     inputSchema: {
       type: "object",
       properties: {
@@ -185,6 +222,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const projects = db.projects(includeItems);
@@ -194,7 +232,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_areas",
-    description: "Get all areas from Things",
+    description: "Get all areas (top-level life buckets that contain projects and standalone tasks).",
     inputSchema: {
       type: "object",
       properties: {
@@ -202,6 +240,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const areas = db.getAreas();
@@ -211,7 +250,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_tags",
-    description: "Get all tags",
+    description: "Get all tag definitions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -219,6 +258,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const tags = db.getTags();
@@ -228,7 +268,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_tagged_items",
-    description: "Get items with a specific tag",
+    description: "Get all todos that have a given tag.",
     inputSchema: {
       type: "object",
       properties: {
@@ -237,6 +277,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["tag"],
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const tag = reqString(a, "tag");
       const todos = db.taggedItems(tag);
@@ -247,7 +288,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_headings",
-    description: "Get headings, optionally filtered to one project",
+    description: "Get project headings (sub-sections), optionally scoped to one project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -255,6 +296,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const projectUuid = optString(a, "project_uuid");
       if (projectUuid) {
@@ -269,7 +311,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "search_todos",
-    description: "Search todos by title or notes",
+    description: "Full-text search across todo titles, notes, and parent area names.",
     inputSchema: {
       type: "object",
       properties: {
@@ -278,6 +320,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["query"],
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const q = reqString(a, "query");
       const todos = db.search(q);
@@ -288,7 +331,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "search_advanced",
-    description: "Advanced todo search with multiple filters",
+    description:
+      "Multi-filter search by status, dates, tag, area, type, or recency. Prefer a named view (get_today / get_upcoming / etc.) when one matches — those mirror the Things UI ordering.",
     inputSchema: {
       type: "object",
       properties: {
@@ -310,6 +354,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const tasks = db.getTasks({
         status: (optString(a, "status") as TaskStatus | undefined) ?? "incomplete",
@@ -328,7 +373,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "get_recent",
-    description: "Get recently created items within a time period",
+    description: "Get items created within a time period (e.g., '3d' for the last 3 days). Newest first.",
     inputSchema: {
       type: "object",
       properties: {
@@ -337,6 +382,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["period"],
       additionalProperties: false,
     },
+    annotations: READ,
     handler: (a) => {
       const period = reqString(a, "period");
       const todos = db.last(period);
@@ -371,8 +417,10 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "add_todo",
-    description: "Create a new todo in Things",
+    description:
+      "Create one new todo. For ≥2 todos in one call, use `bulk_add_todos` instead — it's one URL invocation vs. N.",
     inputSchema: addTodoSchema,
+    annotations: CREATE,
     handler: (a) => {
       const title = reqString(a, "title");
       const url = addTodoUrl({
@@ -395,7 +443,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "add_project",
-    description: "Create a new project in Things",
+    description:
+      "Create a new project. `area_id` (from `get_areas`) is preferred over `area_title` since titles can be ambiguous. Pass `todos` to seed the project with initial tasks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -414,6 +463,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["title"],
       additionalProperties: false,
     },
+    annotations: CREATE,
     handler: (a) => {
       const title = reqString(a, "title");
       const url = addProjectUrl({
@@ -434,7 +484,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "update_todo",
-    description: "Update an existing todo in Things",
+    description:
+      "Update an existing todo. The `id` is the UUID returned by any read tool (e.g. `get_today`, `search_todos`). For ≥2 updates in one call, use `bulk_update_todos`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -454,6 +505,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["id"],
       additionalProperties: false,
     },
+    annotations: UPDATE,
     handler: (a) => {
       const id = reqString(a, "id");
       const url = updateTodoUrl(
@@ -481,7 +533,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "update_project",
-    description: "Update an existing project in Things",
+    description:
+      "Update an existing project. The `id` is the UUID returned by `get_projects` or any read that surfaces the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -497,6 +550,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["id"],
       additionalProperties: false,
     },
+    annotations: UPDATE,
     handler: (a) => {
       const id = reqString(a, "id");
       const url = updateProjectUrl(
@@ -567,7 +621,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
   tools.push({
     name: "bulk_add_todos",
     description:
-      "Create many todos in a single Things URL call. Faster than calling add_todo repeatedly.",
+      "Create many todos in a single Things URL call. Strongly preferred over looping add_todo — one URL invocation vs. N, and the Things app doesn't bounce in the dock once per task.",
     inputSchema: {
       type: "object",
       properties: {
@@ -583,6 +637,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["todos"],
       additionalProperties: false,
     },
+    annotations: CREATE,
     handler: (a) => {
       const todos = a.todos;
       if (!Array.isArray(todos) || todos.length === 0)
@@ -606,7 +661,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
   tools.push({
     name: "bulk_update_todos",
     description:
-      "Update many todos in a single Things URL call. Pass an array of {id, ...changes}.",
+      "Update many todos in a single Things URL call. Pass an array of {id, ...changes} where id is the UUID from any read tool. Strongly preferred over looping update_todo.",
     inputSchema: {
       type: "object",
       properties: {
@@ -627,6 +682,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["updates"],
       additionalProperties: false,
     },
+    annotations: UPDATE,
     handler: (a) => {
       const token = requireAuth();
       const updates = a.updates;
@@ -656,7 +712,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "show_item",
-    description: "Bring up a specific item or list in the Things UI",
+    description:
+      "Open the Things app and navigate to a specific item or list. Brings the app to the foreground; use sparingly.",
     inputSchema: {
       type: "object",
       properties: {
@@ -671,6 +728,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["id"],
       additionalProperties: false,
     },
+    annotations: UI,
     handler: (a) => {
       const id = reqString(a, "id");
       executeUrl(
@@ -682,7 +740,8 @@ export function buildTools(db: ThingsDB): ToolDef[] {
 
   tools.push({
     name: "search_items",
-    description: "Open the Things UI search for a query",
+    description:
+      "Open the Things app's search UI for a query. For programmatic search, use `search_todos` instead — it returns results as data without opening the app.",
     inputSchema: {
       type: "object",
       properties: {
@@ -691,6 +750,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["query"],
       additionalProperties: false,
     },
+    annotations: UI,
     handler: (a) => {
       const q = reqString(a, "query");
       executeUrl(searchUrl(q));

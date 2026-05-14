@@ -8,6 +8,34 @@ import {
 import { ThingsDB } from "./things-db.ts";
 import { buildTools } from "./tools.ts";
 
+const SERVER_INSTRUCTIONS = `\
+This server reads from and writes to Things 3, the macOS task app, on the user's local machine.
+
+Mental model. Tasks live in one of these views:
+- Inbox: unsorted captures
+- Today: scheduled for today (predicted — includes past-due scheduled tasks and past-deadline tasks)
+- Upcoming: scheduled for a future date
+- Anytime: no schedule, ready to do
+- Someday: deferred indefinitely
+- Logbook: completed or canceled
+
+Tasks can sit directly in an Area, or inside a Project (Projects live in Areas; Projects have Headings as sub-sections).
+
+Scheduling syntax for the \`when\` field on add/update tools:
+- Keywords: today, tomorrow, evening, anytime, someday
+- Dates: YYYY-MM-DD, or natural language ("in 3 days", "next monday")
+- Reminders: YYYY-MM-DD@HH:MM (24-hour)
+
+Tool selection rules:
+- For reading, prefer the named views (get_today, get_inbox, etc.) over search_advanced when one fits — output matches the Things UI grouping and ordering.
+- For multiple writes, prefer bulk_add_todos / bulk_update_todos over looping single-item calls. One URL invocation vs. N is dramatically faster and avoids the Things app bouncing in the dock N times.
+- When you have a UUID for a project, area, or heading (from any get_* output), pass it as list_id / heading_id / area_id. The title fallbacks (list, heading, area) match by string and are ambiguous if duplicates exist.
+
+Updates need the task UUID. Every read tool surfaces it as "UUID: ..." in the output. After add_todo the new task is visible in SQLite within ~1 second; re-read the relevant view if you need the new UUID for follow-up.
+
+Not supported (Things URL-scheme limitations): recurring/repeating tasks on create, updating individual checklist items.
+`;
+
 async function main(): Promise<void> {
   const db = new ThingsDB();
   const tools = buildTools(db);
@@ -15,7 +43,7 @@ async function main(): Promise<void> {
 
   const server = new Server(
     { name: "things-mcp", version: "0.1.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -23,6 +51,7 @@ async function main(): Promise<void> {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
+      annotations: t.annotations,
     })),
   }));
 
