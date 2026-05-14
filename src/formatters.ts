@@ -21,38 +21,24 @@ function calculateAge(dateStr: string): string {
   return `${years} year${years > 1 ? "s" : ""} ago`;
 }
 
-function safeAreaTitle(db: ThingsDB, areaUuid: string): string | undefined {
-  const areas = db.getAreas({ uuid: areaUuid });
-  return areas[0]?.title;
-}
-
-export function formatTodo(db: ThingsDB, todo: Task): string {
+export function formatTodo(_db: ThingsDB, todo: Task): string {
   const lines: string[] = [];
   lines.push(`Title: ${todo.title}`);
   lines.push(`UUID: ${todo.uuid}`);
   lines.push(`Type: ${todo.type}`);
   if (todo.status) lines.push(`Status: ${todo.status}`);
 
-  // Look up parent project (used for both List status and Project display)
-  let parentProject: Task | null = null;
-  if (todo.project) {
-    parentProject = db.get(todo.project, false);
-  } else if (todo.heading) {
-    const heading = db.get(todo.heading, false);
-    if (heading?.project) parentProject = db.get(heading.project, false);
-  }
+  // Parent project metadata comes from the SQL JOIN, no extra query.
+  // - direct project: TASK.project -> PROJECT.{uuid,title,start}
+  // - via heading: HEADING.project -> PROJECT_OF_HEADING.{uuid,title,start}
+  const parentTitle = todo.project_title ?? todo.project_of_heading_title ?? null;
+  const parentStart = todo.project_start ?? todo.project_of_heading_start ?? null;
 
   if (todo.start) {
-    let effectiveStart = todo.start as string;
-    if (
-      effectiveStart !== "Someday" &&
-      parentProject &&
-      parentProject.start === "Someday"
-    ) {
-      effectiveStart = "Someday";
-      lines.push(`List: ${effectiveStart} (inherited from project)`);
+    if (todo.start !== "Someday" && parentStart === "Someday") {
+      lines.push("List: Someday (inherited from project)");
     } else {
-      lines.push(`List: ${effectiveStart}`);
+      lines.push(`List: ${todo.start}`);
     }
   }
 
@@ -72,18 +58,9 @@ export function formatTodo(db: ThingsDB, todo: Task): string {
   }
 
   if (todo.notes) lines.push(`Notes: ${todo.notes}`);
-
-  if (parentProject) lines.push(`Project: ${parentProject.title}`);
-
-  if (todo.heading) {
-    const heading = db.get(todo.heading, false);
-    if (heading) lines.push(`Heading: ${heading.title}`);
-  }
-
-  if (todo.area) {
-    const title = safeAreaTitle(db, todo.area);
-    if (title) lines.push(`Area: ${title}`);
-  }
+  if (parentTitle) lines.push(`Project: ${parentTitle}`);
+  if (todo.heading_title) lines.push(`Heading: ${todo.heading_title}`);
+  if (todo.area_title) lines.push(`Area: ${todo.area_title}`);
 
   if (Array.isArray(todo.tags) && todo.tags.length > 0) {
     lines.push(`Tags: ${todo.tags.join(", ")}`);
@@ -109,10 +86,7 @@ export function formatProject(
   lines.push(`Title: ${project.title}`);
   lines.push(`UUID: ${project.uuid}`);
 
-  if (project.area) {
-    const title = safeAreaTitle(db, project.area);
-    if (title) lines.push(`Area: ${title}`);
-  }
+  if (project.area_title) lines.push(`Area: ${project.area_title}`);
 
   if (project.notes) lines.push(`Notes: ${project.notes}`);
 
@@ -210,12 +184,7 @@ export function formatHeading(
   lines.push(`UUID: ${heading.uuid}`);
   lines.push("Type: heading");
 
-  if (heading.project_title) {
-    lines.push(`Project: ${heading.project_title}`);
-  } else if (heading.project) {
-    const project = db.get(heading.project, false);
-    if (project) lines.push(`Project: ${project.title}`);
-  }
+  if (heading.project_title) lines.push(`Project: ${heading.project_title}`);
 
   if (heading.created) {
     lines.push(`Created: ${heading.created}`);

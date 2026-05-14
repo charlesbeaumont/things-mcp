@@ -15,6 +15,10 @@ export interface Task {
   project_title?: string | null;
   heading?: string | null;
   heading_title?: string | null;
+  project_of_heading?: string | null;
+  project_of_heading_title?: string | null;
+  project_start?: StartBucket | null;
+  project_of_heading_start?: StartBucket | null;
   start_date?: string | null;
   deadline?: string | null;
   reminder_time?: string | null;

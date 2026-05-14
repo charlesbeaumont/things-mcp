@@ -10,7 +10,12 @@ import type { Task } from "./types.ts";
 interface SomedayContext {
   somedayProjectIds: Set<string>;
   headingToProject: Map<string, string>; // heading uuid -> parent project uuid
+  expiresAt: number;
 }
+
+// Short TTL so edits made directly in the Things app (not via this MCP) get
+// picked up within a minute, without paying for the rebuild on every call.
+const CACHE_TTL_MS = 60_000;
 
 let cachedContext: SomedayContext | null = null;
 
@@ -19,7 +24,7 @@ export function clearSomedayCache(): void {
 }
 
 function getContext(db: ThingsDB): SomedayContext {
-  if (cachedContext) return cachedContext;
+  if (cachedContext && cachedContext.expiresAt > Date.now()) return cachedContext;
   const somedayProjects = db.projects(false, "Someday");
   const somedayProjectIds = new Set(somedayProjects.map((p) => p.uuid));
   const headingToProject = new Map<string, string>();
@@ -27,7 +32,11 @@ function getContext(db: ThingsDB): SomedayContext {
     const headings = db.headings(projectId);
     for (const h of headings) headingToProject.set(h.uuid, projectId);
   }
-  cachedContext = { somedayProjectIds, headingToProject };
+  cachedContext = {
+    somedayProjectIds,
+    headingToProject,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  };
   return cachedContext;
 }
 

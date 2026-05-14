@@ -23,24 +23,12 @@ export function buildUrl(
   return query ? `things:///${command}?${query}` : `things:///${command}`;
 }
 
-/**
- * Open a Things URL in the background (without bringing the app to the front).
- * Wrap in `osascript do shell script open -g` because plain `open -g <url>`
- * doesn't reliably stay backgrounded for custom URL schemes.
- */
+/** Open a Things URL in the background without bringing the app to the front. */
 export function executeUrl(url: string): void {
-  const result = spawnSync("osascript", [
-    "-e",
-    `do shell script "open -g \\"${url.replace(/"/g, '\\"')}\\""`,
-  ]);
+  const result = spawnSync("open", ["-g", url]);
   if (result.status !== 0) {
-    // Fallback: direct open
-    const fallback = spawnSync("open", ["-g", url]);
-    if (fallback.status !== 0) {
-      throw new Error(
-        `Failed to open Things URL: ${fallback.stderr?.toString() ?? "unknown error"}`,
-      );
-    }
+    const stderr = result.stderr?.toString().trim() || "unknown error";
+    throw new Error(`Failed to open Things URL (${stderr}): ${url}`);
   }
 }
 

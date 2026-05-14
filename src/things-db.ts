@@ -17,7 +17,8 @@ import type {
 
 const DB_GLOB =
   "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite";
-const SETTINGS_SINGLETON_UUID = "RhAzEf6qDxCD5PmnZVtBZR";
+// things.py threshold; anything below means a pre-3.15.16 schema we don't support.
+const MIN_SUPPORTED_DB_VERSION = 22;
 
 const START_TO_FILTER: Record<StartBucket, string> = {
   Inbox: "start = 0",
@@ -207,6 +208,18 @@ function makeTasksSqlQuery(
       CASE WHEN PROJECT.uuid IS NOT NULL THEN PROJECT.title END AS project_title,
       CASE WHEN HEADING.uuid IS NOT NULL THEN HEADING.uuid END AS heading,
       CASE WHEN HEADING.uuid IS NOT NULL THEN HEADING.title END AS heading_title,
+      CASE WHEN PROJECT_OF_HEADING.uuid IS NOT NULL THEN PROJECT_OF_HEADING.uuid END AS project_of_heading,
+      CASE WHEN PROJECT_OF_HEADING.uuid IS NOT NULL THEN PROJECT_OF_HEADING.title END AS project_of_heading_title,
+      CASE
+        WHEN PROJECT.${IS_INBOX} THEN 'Inbox'
+        WHEN PROJECT.${IS_ANYTIME} THEN 'Anytime'
+        WHEN PROJECT.${IS_SOMEDAY} THEN 'Someday'
+      END AS project_start,
+      CASE
+        WHEN PROJECT_OF_HEADING.${IS_INBOX} THEN 'Inbox'
+        WHEN PROJECT_OF_HEADING.${IS_ANYTIME} THEN 'Anytime'
+        WHEN PROJECT_OF_HEADING.${IS_SOMEDAY} THEN 'Someday'
+      END AS project_of_heading_start,
       TASK.notes,
       CASE WHEN TAG.uuid IS NOT NULL THEN 1 END AS tags,
       CASE
@@ -265,6 +278,26 @@ export class ThingsDB {
   constructor(filepath?: string) {
     const path = filepath ?? findDatabasePath();
     this.db = new Database(path, { readonly: true });
+    this.assertSchemaVersion();
+  }
+
+  private assertSchemaVersion(): void {
+    const row = this.db
+      .query("SELECT value FROM Meta WHERE key = 'databaseVersion'")
+      .get() as { value: string } | undefined;
+    if (!row) {
+      throw new Error(
+        "Things database has no databaseVersion row. Is this a Things 3 database?",
+      );
+    }
+    // Things stores the version as an XML plist `<integer>N</integer>`.
+    const match = /<integer>(\d+)<\/integer>/.exec(row.value);
+    const version = match ? Number(match[1]) : NaN;
+    if (!Number.isFinite(version) || version < MIN_SUPPORTED_DB_VERSION) {
+      throw new Error(
+        `Unsupported Things database version: ${row.value}. Need ≥ ${MIN_SUPPORTED_DB_VERSION}.`,
+      );
+    }
   }
 
   close(): void {
@@ -407,11 +440,9 @@ export class ThingsDB {
 
   getAuthToken(): string | null {
     if (this.cachedToken !== undefined) return this.cachedToken;
-    const sql =
-      "SELECT uriSchemeAuthenticationToken FROM TMSettings WHERE uuid = ?";
-    const row = this.db.query(sql).get(SETTINGS_SINGLETON_UUID) as
-      | { uriSchemeAuthenticationToken: string | null }
-      | undefined;
+    const row = this.db
+      .query("SELECT uriSchemeAuthenticationToken FROM TMSettings LIMIT 1")
+      .get() as { uriSchemeAuthenticationToken: string | null } | undefined;
     this.cachedToken = row?.uriSchemeAuthenticationToken ?? null;
     return this.cachedToken;
   }
