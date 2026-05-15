@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # macos-14 is arm64 by default; bun build --compile produces a native
+    # arm64 Mach-O and Bun's cross-compile from x86_64 is unreliable.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build binary
+        run: bun run build
+
+      - name: Stage versioned asset
+        run: cp bin/things-mcp things-mcp-${{ github.ref_name }}-darwin-arm64
+
+      - name: Verify binary
+        run: |
+          file things-mcp-${{ github.ref_name }}-darwin-arm64
+          ls -lh things-mcp-${{ github.ref_name }}-darwin-arm64
+
+      - name: Create/update release with binary
+        uses: softprops/action-gh-release@v2
+        with:
+          files: things-mcp-${{ github.ref_name }}-darwin-arm64
+          generate_release_notes: true
+          fail_on_unmatched_files: true

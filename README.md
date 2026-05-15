@@ -1,5 +1,9 @@
 # things-mcp
 
+![GitHub release](https://img.shields.io/github/v/release/charlesbeaumont/things-mcp)
+![License](https://img.shields.io/github/license/charlesbeaumont/things-mcp)
+![Platform](https://img.shields.io/badge/platform-macOS-blue)
+
 A Things 3 MCP server compiled to a single Bun binary.
 
 ## What it does
@@ -13,7 +17,15 @@ SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) 
 
 ## Install
 
-Make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
+**Quick path (no Bun needed):** download `things-mcp-vX.Y.Z-darwin-arm64` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest), then:
+
+```bash
+chmod +x things-mcp-*-darwin-arm64
+xattr -d com.apple.quarantine things-mcp-*-darwin-arm64
+mv things-mcp-*-darwin-arm64 /usr/local/bin/things-mcp   # or anywhere on $PATH
+```
+
+**Build from source:** make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
 
 ```bash
 git clone https://github.com/charlesbeaumont/things-mcp.git

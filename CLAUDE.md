@@ -87,6 +87,20 @@ After any change Charles will use, rebuild and ask him to restart Claude Desktop
 - **Recurrence creation**: Things URL scheme can't create recurring todos. Won't change unless Cultured Code adds it.
 - **Checklist-item updates**: the URL scheme doesn't expose checklist items as first-class addressable IDs. Updates replace the whole checklist if at all.
 
+## Releasing
+
+`.github/workflows/release.yml` does the heavy lifting. To cut a release:
+
+1. Update `CHANGELOG.md` with a new `## [X.Y.Z]` section describing what changed.
+2. Update `"version"` in `package.json` to match.
+3. Commit: `git commit -am "Cut vX.Y.Z"`
+4. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
+5. Push: `git push origin main && git push origin vX.Y.Z`
+
+The tag push triggers the workflow on a `macos-14` (arm64) runner, which typechecks, builds the binary, stages it as `things-mcp-vX.Y.Z-darwin-arm64`, and uses `softprops/action-gh-release@v2` to create the GitHub Release with auto-generated notes from commits since the previous tag and the binary attached.
+
+Don't rebuild locally and upload manually unless the workflow is broken — the whole point is that this is hands-off after `git push --tags`.
+
 ## Reference
 
 - Things URL scheme docs: https://culturedcode.com/things/help/url-scheme/
