@@ -14,7 +14,7 @@ jobs:
     # arm64 Mach-O and Bun's cross-compile from x86_64 is unreliable.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -38,7 +38,7 @@ jobs:
           ls -lh things-mcp-${{ github.ref_name }}-darwin-arm64
 
       - name: Create/update release with binary
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: things-mcp-${{ github.ref_name }}-darwin-arm64
           generate_release_notes: true
