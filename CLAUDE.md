@@ -4,7 +4,7 @@ Guidance for Claude when working in this repo.
 
 ## What this is
 
-A personal Things 3 MCP server. Replaces [hald/things-mcp](https://github.com/hald/things-mcp) for Charles's daily use. Built because hald is Python-on-uvx, which triggers a runtime-permission prompt on every Claude restart, and because it doesn't expose Things' bulk-edit endpoint.
+A personal Things 3 MCP server, replacing [hald/things-mcp](https://github.com/hald/things-mcp) for the maintainer's daily use. Built because hald is Python-on-uvx, which triggers a runtime-permission prompt on every Claude restart, and because it doesn't expose Things' bulk-edit endpoint.
 
 Single compiled binary (Bun): one path, one Claude permission approval, no `uv`/`npx`/`node` wrapper.
 
@@ -52,13 +52,13 @@ printf '%s\n' \
   | ./bin/things-mcp | tail -1 | python3 -m json.tool
 ```
 
-After any change Charles will use, rebuild and ask him to restart Claude Desktop — the compiled binary is what Claude actually invokes, not the source.
+After any change that affects MCP behavior, rebuild and prompt the user to restart Claude Desktop — the compiled binary is what Claude actually invokes, not the source.
 
 ## Tool design conventions
 
 - All tool inputs are JSON Schema (not Zod) — keeps the dep tree to just `@modelcontextprotocol/sdk`.
 - Tool names mirror hald's snake_case (`get_today`, `add_todo`, etc.) so muscle-memory carries over. Don't rename.
-- Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Matches hald shape verbatim so Charles's existing skills/prompts work unchanged.
+- Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Matches hald shape verbatim so downstream skills and prompts that parse this output keep working.
 - Bulk tools are additive — `add_todo` and `update_todo` still exist for one-offs. Don't deprecate them.
 
 ## Rules for changes
@@ -66,9 +66,9 @@ After any change Charles will use, rebuild and ask him to restart Claude Desktop
 - **Don't add a build step beyond `bun run build`.** The whole point of this repo is one clean binary.
 - **Don't add runtime dependencies casually.** Today: `@modelcontextprotocol/sdk` only. `bun:sqlite` and `node:child_process` are built into Bun. Adding zod, lodash, or anything else needs a real reason.
 - **No comments explaining the obvious.** Code is short; types document themselves. Only comment hidden constraints (e.g., the URL length cap, the singleton-uuid quirk).
-- **No backwards-compatibility shims.** This is Charles's personal tool. If you change a signature, change the call sites.
-- **Preserve hald output parity.** Charles's daily/weekly/curate skills parse this output. Changes to `formatters.ts` need a real reason.
-- **Don't touch the MCP client config** (`~/Library/Application Support/Claude/claude_desktop_config.json`) without explicit instruction. That's a "Charles flips the switch" moment.
+- **No backwards-compatibility shims.** Single-author personal tool. If you change a signature, change the call sites.
+- **Preserve hald output parity.** Downstream skills parse this output. Changes to `formatters.ts` need a real reason.
+- **Don't touch the MCP client config** (`~/Library/Application Support/Claude/claude_desktop_config.json`) without explicit instruction — that's a manual user-action moment, not something the agent does.
 
 ## When adding a new tool
 
@@ -106,4 +106,3 @@ Don't rebuild locally and upload manually unless the workflow is broken — the 
 - Things URL scheme docs: https://culturedcode.com/things/help/url-scheme/
 - things.py (SQL source): https://github.com/thingsapi/things.py
 - MCP TypeScript SDK: https://github.com/modelcontextprotocol/typescript-sdk
-- Original plan: `~/.claude/plans/read-https-github-com-hald-things-mcp-i-polished-gem.md`
