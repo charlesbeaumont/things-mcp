@@ -27,11 +27,12 @@ Scheduling syntax for the \`when\` field on add/update tools:
 - Reminders: YYYY-MM-DD@HH:MM (24-hour)
 
 Tool selection rules:
-- For reading, prefer the named views (get_today, get_inbox, etc.) over search_advanced when one fits — output matches the Things UI grouping and ordering.
-- For multiple writes, prefer bulk_add_todos / bulk_update_todos over looping single-item calls. One URL invocation vs. N is dramatically faster and avoids the Things app bouncing in the dock N times.
+- For reading, prefer the named views (get_today, get_inbox, etc.) when one fits — output matches the Things UI grouping and ordering. Use \`search\` when you need filters (status / dates / tag / area / type / recency) or a full-text query.
+- \`add_todos\` and \`update_todos\` always take arrays. Pass an array of 1 for a single todo; pass many to do them all in one URL call. There is no separate single/bulk variant.
 - When you have a UUID for a project, area, or heading (from any get_* output), pass it as list_id / heading_id / area_id. The title fallbacks (list, heading, area) match by string and are ambiguous if duplicates exist.
+- To create a NEW project with sections (headings) and tasks under each, pass them all to add_project's \`items\` array in one call: \`[{type:'heading', title:'Plan', items:[{title:'Task A'},{title:'Task B'}]}, {type:'heading', title:'Build', items:[...]}]\`. Adding a heading to an EXISTING project is not supported by the Things URL scheme — if a project needs new structure, either create the project that way from the start or have the user add the heading in the Things UI manually.
 
-Updates need the task UUID. Every read tool surfaces it as "UUID: ..." in the output. After add_todo the new task is visible in SQLite within ~1 second; re-read the relevant view if you need the new UUID for follow-up.
+Updates need the task UUID. Every read tool surfaces it as "UUID: ..." in the output. After add_todos the new tasks are visible in SQLite within ~1 second; re-read the relevant view if you need the new UUIDs for follow-up.
 
 Not supported (Things URL-scheme limitations): recurring/repeating tasks on create, updating individual checklist items.
 `;
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
   const server = new Server(
-    { name: "things-mcp", version: "0.1.0" },
+    { name: "things-mcp", version: "0.2.0" },
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 

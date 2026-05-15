@@ -4,7 +4,7 @@ Guidance for Claude when working in this repo.
 
 ## What this is
 
-A personal Things 3 MCP server, replacing [hald/things-mcp](https://github.com/hald/things-mcp) for the maintainer's daily use. Built because hald is Python-on-uvx, which triggers a runtime-permission prompt on every Claude restart, and because it doesn't expose Things' bulk-edit endpoint.
+A personal Things 3 MCP server. Single Bun-compiled binary that reads Things via SQLite and writes via Things' URL scheme. Bulk-by-default writes via the `/json` endpoint, plus structured project creation with headings.
 
 Single compiled binary (Bun): one path, one Claude permission approval, no `uv`/`npx`/`node` wrapper.
 
@@ -12,21 +12,21 @@ Single compiled binary (Bun): one path, one Claude permission approval, no `uv`/
 
 ```
 src/index.ts          MCP Server (stdio transport) — wires the SDK to tool handlers
-src/tools.ts          All 24 tool definitions (JSON Schema + handler)
+src/tools.ts          All 17 tool definitions (JSON Schema + handler)
 src/things-db.ts      bun:sqlite reader. SQL ported from things.py (MIT).
-src/things-url.ts     Things URL scheme builder + osascript executor
-src/formatters.ts     Markdown output, identical shape to hald
+src/things-url.ts     Things URL scheme builder + executor
+src/formatters.ts     Markdown formatters for todos/projects/areas/tags/headings
 src/someday-filter.ts Hides tasks inside Someday projects from Today/Upcoming/Anytime
 src/types.ts          Task/Area/Tag types
 ```
 
 **Two data paths:**
 1. **Reads**: open `~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite` in `readonly: true` mode. Schema tables: `TMTask`, `TMArea`, `TMTag`, `TMTaskTag`, `TMAreaTag`, `TMChecklistItem`, `TMSettings`.
-2. **Writes**: invoke `things:///add`, `things:///update`, `things:///json` via `osascript -e 'do shell script "open -g \"URL\""'`. Update operations require the auth-token read from `TMSettings.uriSchemeAuthenticationToken` (singleton row `uuid = 'RhAzEf6qDxCD5PmnZVtBZR'`).
+2. **Writes**: all writes go through `things:///json` via `spawnSync("open", ["-g", url])`. Update operations require the auth-token read from `TMSettings.uriSchemeAuthenticationToken` (single-row table).
 
-**Bulk editing** (the thing hald doesn't have): `bulk_add_todos` and `bulk_update_todos` compile their input arrays into a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling. For `/json` update operations, `auth-token` goes at the URL level (not per-item) — empirically confirmed during Phase 2 testing.
+**Bulk-by-default writes**: `add_todos` and `update_todos` take arrays (size 1 is fine). They compile to a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling. For `/json` update operations, `auth-token` goes at the URL level (not per-item) — empirically confirmed.
 
-**Write→read timing**: URL-scheme writes are fire-and-forget, but Things processes them essentially synchronously — empirically the new row is visible in SQLite within ~325 ms of `executeUrl` returning (faster than the MCP roundtrip itself). No post-write sleep is needed; an immediate `get_today` after `add_todo` will see the new task. If this ever changes, look in [src/things-url.ts:executeUrl](src/things-url.ts).
+**Write→read timing**: URL-scheme writes are fire-and-forget, but Things processes them essentially synchronously — empirically the new row is visible in SQLite within ~325 ms of `executeUrl` returning (faster than the MCP roundtrip itself). No post-write sleep is needed; an immediate `get_today` after `add_todos` will see the new tasks. If this ever changes, look in [src/things-url.ts:executeUrl](src/things-url.ts).
 
 **Someday filter**: Things UI hides tasks inside Someday-marked projects from Today/Upcoming/Anytime. The SQLite schema doesn't inherit this — we replicate it client-side in [src/someday-filter.ts](src/someday-filter.ts). The cache is invalidated after any write.
 
@@ -57,9 +57,9 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 ## Tool design conventions
 
 - All tool inputs are JSON Schema (not Zod) — keeps the dep tree to just `@modelcontextprotocol/sdk`.
-- Tool names mirror hald's snake_case (`get_today`, `add_todo`, etc.) so muscle-memory carries over. Don't rename.
-- Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Matches hald shape verbatim so downstream skills and prompts that parse this output keep working.
-- Bulk tools are additive — `add_todo` and `update_todo` still exist for one-offs. Don't deprecate them.
+- Tool names are snake_case (`get_today`, `add_todos`, etc.). Downstream skills depend on the names, so don't rename without a real reason.
+- Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Output shape is stable so downstream skills that parse this output keep working across versions.
+- Writes are array-shaped by default (`add_todos`, `update_todos`). Size-1 calls go through the same `/json` path — there are no separate single-vs-bulk variants.
 
 ## Rules for changes
 
@@ -67,7 +67,7 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 - **Don't add runtime dependencies casually.** Today: `@modelcontextprotocol/sdk` only. `bun:sqlite` and `node:child_process` are built into Bun. Adding zod, lodash, or anything else needs a real reason.
 - **No comments explaining the obvious.** Code is short; types document themselves. Only comment hidden constraints (e.g., the URL length cap, the singleton-uuid quirk).
 - **No backwards-compatibility shims.** Single-author personal tool. If you change a signature, change the call sites.
-- **Preserve hald output parity.** Downstream skills parse this output. Changes to `formatters.ts` need a real reason.
+- **Preserve output stability.** Downstream skills parse this output. Changes to `formatters.ts` need a real reason.
 - **Don't touch the MCP client config** (`~/Library/Application Support/Claude/claude_desktop_config.json`) without explicit instruction — that's a manual user-action moment, not something the agent does.
 
 ## When adding a new tool
@@ -86,6 +86,7 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 - **Publishing to npm/PyPI**: this is one binary on one machine.
 - **Recurrence creation**: Things URL scheme can't create recurring todos. Won't change unless Cultured Code adds it.
 - **Checklist-item updates**: the URL scheme doesn't expose checklist items as first-class addressable IDs. Updates replace the whole checklist if at all.
+- **Adding a heading to an existing project**: the Things URL scheme silently ignores `items` on `operation: update` for projects, and top-level `{type:"heading"}` items with any project-reference attribute (`list-id`, `project`, `list`) we tried are rejected. Empirically verified May 2026. The only path to creating headings is `add_project` with structured `items` at creation time. If a user needs to add structure to an existing project, they have to do it in the Things UI manually.
 
 ## Releasing
 

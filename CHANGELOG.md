@@ -2,6 +2,43 @@
 
 All notable changes to this project. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] — 2026-05-15
+
+Tool surface consolidated from 24 to 17. Heading creation supported for new projects. Breaking changes to `add_project`, `add_todo` → `add_todos`, and `update_todo` → `update_todos`.
+
+### Removed
+
+- `add_todo`, `bulk_add_todos`, `update_todo`, `bulk_update_todos` — collapsed into `add_todos` / `update_todos` (always array-shaped; size-1 calls work the same).
+- `search_todos`, `search_advanced`, `get_recent`, `get_tagged_items` — collapsed into one `search` tool.
+- `show_item`, `search_items` — UI-navigation tools that brought Things to the foreground. Easy to re-add if a real need shows up.
+
+### Added
+
+- `add_todos(todos: TodoSpec[])` — one or many in a single `/json` URL call. Same fields as the old `add_todo` plus an array wrapper.
+- `update_todos(updates: UpdateSpec[])` — one or many; each entry must include `id`. Requires the URL-scheme auth token, read automatically from `TMSettings`.
+- `search(query?, status?, start_date?, deadline?, tag?, area?, type?, last?)` — full-text and/or filter, all parameters optional. `last` triggers newest-first sort, matching the old `get_recent`.
+- `add_project` now accepts a structured `items: Item[]` where each entry is `{type: "to-do", title, ...}` or `{type: "heading", title, items: [...todos]}`. Heading children are a shorthand for setting `heading: <title>` on each nested todo. Handler routes through `things:///json` to support nested structure.
+- `JsonItem` union in [src/things-url.ts](src/things-url.ts) gained a `heading` variant: `{type: "heading", attributes: {title, archived?}}`. Headings are nested-only inside a project's `items` array — Things' URL scheme rejects them at the JSON top level.
+
+### Changed (breaking)
+
+- `add_project`: `todos: string[]` removed. Migrate `{todos: ["a", "b"]}` → `{items: [{type: "to-do", title: "a"}, {type: "to-do", title: "b"}]}`, or use headings: `{items: [{type: "heading", title: "Plan", items: [{title: "a"}, {title: "b"}]}]}`.
+- Single-item write callers move to the array shape: `add_todo({title}) → add_todos({todos: [{title}]})`, `update_todo({id, …}) → update_todos({updates: [{id, …}]})`.
+- Search callers move to `search`: `search_todos({query}) → search({query})`, `search_advanced({tag}) → search({tag})`, `get_recent({period}) → search({last: period})`, `get_tagged_items({tag}) → search({tag})`.
+- Server `instructions` updated to teach the new shapes.
+
+### Empirically verified — not supported
+
+- **Adding a heading to an existing project**: Things' `/json` with `operation: "update"` on a project silently ignores the `items` field. Top-level `{type: "heading"}` items with any project-reference attribute (`list-id`, `project`, `list`) we tried were also rejected. No `add_heading` tool ships; the only heading-creation path is `add_project` at creation time. Documented in CLAUDE.md and the server instructions.
+
+### Tool inventory (17)
+
+- **Named list views (7)**: `get_inbox`, `get_today`, `get_upcoming`, `get_anytime`, `get_someday`, `get_logbook`, `get_trash`
+- **Entity listings (5)**: `get_todos`, `get_projects`, `get_areas`, `get_tags`, `get_headings`
+- **Search (1)**: `search`
+- **Todo writes (2)**: `add_todos`, `update_todos`
+- **Project writes (2)**: `add_project` (now with `items`), `update_project`
+
 ## [0.1.0] — 2026-05-14
 
 First working release. Single Bun-compiled binary, 24 tools, validated end-to-end against a live Things 3 database.

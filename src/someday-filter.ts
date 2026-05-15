@@ -2,10 +2,10 @@ import type { ThingsDB } from "./things-db.ts";
 import type { Task } from "./types.ts";
 
 /**
- * Replicate hald's Someday-project filtering. The Things UI hides tasks
- * belonging to a project marked "Someday" from Today/Upcoming/Anytime even
- * when the task itself has start=Anytime. We do the same client-side because
- * the SQLite schema doesn't inherit project Someday status to children.
+ * Replicate Things UI behaviour: tasks inside a project marked Someday are
+ * hidden from Today/Upcoming/Anytime even when their own start = Anytime/Today.
+ * The SQLite schema doesn't propagate project start to children, so we do it
+ * client-side.
  */
 interface SomedayContext {
   somedayProjectIds: Set<string>;

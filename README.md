@@ -8,10 +8,10 @@ A Things 3 MCP server compiled to a single Bun binary.
 
 ## What it does
 
-- 24 tools: full read parity with [hald/things-mcp](https://github.com/hald/things-mcp) plus first-class bulk editing (`bulk_add_todos`, `bulk_update_todos`).
+- 17 tools covering reads, bulk-by-default writes (`add_todos`, `update_todos`), structured project creation with headings, and a single multi-filter `search`.
 - Reads via direct SQLite (read-only) against the Things app database.
-- Writes via the Things URL scheme (`things:///add`, `things:///update`, `things:///json`).
-- Someday-project filter matches Things UI: tasks inside Someday projects are hidden from Today/Upcoming/Anytime.
+- Writes via the Things URL scheme (`things:///json`), single URL call per batch.
+- Behaviour matches the Things UI: Someday-project filtering, `groupTodayByParent`, effective list label (Today / Upcoming derived from `start` + `startDate`).
 
 SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) (MIT).
 
@@ -39,28 +39,37 @@ You also need to enable the Things URL scheme once: **Things → Settings → Ge
 
 For Claude Desktop, paste the snippet from `install.sh` into `~/Library/Application Support/Claude/claude_desktop_config.json` under `mcpServers`, then restart Claude Desktop.
 
-## Bulk editing
+## Writes are array-shaped
 
 ```jsonc
-// bulk_add_todos
+// add_todos — works for 1 or N
 {
   "todos": [
     { "title": "Buy milk", "when": "today" },
     { "title": "Call Anne", "when": "tomorrow", "tags": ["Calls"] },
-    { "title": "Review Q3 plan", "list": "🧠 Full Focus" }
+    { "title": "Review Q3 plan", "list_title": "🧠 Full Focus" }
   ]
 }
 
-// bulk_update_todos
+// update_todos — same shape
 {
   "updates": [
     { "id": "abc123", "completed": true },
     { "id": "def456", "when": "next monday", "tags": ["Important"] }
   ]
 }
+
+// add_project — items mixes headings and todos
+{
+  "title": "Q3 prep",
+  "items": [
+    { "type": "heading", "title": "Plan",  "items": [{ "title": "Outline" }, { "title": "Review" }] },
+    { "type": "heading", "title": "Build", "items": [{ "title": "Implement" }] }
+  ]
+}
 ```
 
-Both compile to a single `things:///json?data=[...]` URL call. Auto-chunks if the encoded URL exceeds ~200 KB (~50+ items, depending on payload).
+All writes compile to a single `things:///json?data=[...]` URL call. Auto-chunks if the encoded URL exceeds ~200 KB (~50+ items, depending on payload).
 
 ## Layout
 
@@ -69,9 +78,9 @@ src/
   index.ts            MCP server entrypoint
   things-db.ts        bun:sqlite reader, SQL queries
   things-url.ts       URL builder + executor + /json bulk
-  formatters.ts       Markdown output (matches hald shape)
+  formatters.ts       Markdown formatters for tasks/projects/areas/tags/headings
   someday-filter.ts   Someday-project filter
-  tools.ts            All 24 tool definitions
+  tools.ts            All 17 tool definitions
   types.ts            Task/Area/Tag types
 ```
 

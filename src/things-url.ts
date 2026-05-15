@@ -163,6 +163,11 @@ export interface JsonProjectAttributes
   items?: JsonItem[];
 }
 
+export interface JsonHeadingAttributes {
+  title: string;
+  archived?: boolean;
+}
+
 export type JsonItem =
   | {
       type: "to-do";
@@ -175,6 +180,13 @@ export type JsonItem =
       operation?: "create" | "update";
       id?: string;
       attributes: JsonProjectAttributes;
+    }
+  | {
+      // Headings live only nested inside a project's `items` array; Things'
+      // /json doesn't accept them at the top level. No `operation` or `id` —
+      // create-only, addressed by title within the parent project.
+      type: "heading";
+      attributes: JsonHeadingAttributes;
     };
 
 /**
@@ -182,7 +194,9 @@ export type JsonItem =
  * update operation; the URL scheme rejects updates without it.
  */
 export function jsonUrl(items: JsonItem[], authToken?: string): string {
-  const needsAuth = items.some((i) => i.operation === "update");
+  const needsAuth = items.some(
+    (i) => i.type !== "heading" && i.operation === "update",
+  );
   const params: Record<string, Param> = {
     data: JSON.stringify(items),
   };
