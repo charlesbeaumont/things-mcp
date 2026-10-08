@@ -1,0 +1,53 @@
+{
+  "manifest_version": "0.3",
+  "name": "things-mcp",
+  "display_name": "Things 3",
+  "version": "0.2.0",
+  "description": "Read and write Things 3 tasks, projects, areas and tags from Claude.",
+  "long_description": "Reads the local Things 3 database directly (read-only SQLite) and writes through the Things URL scheme. Writes need **Things → Settings → General → Enable Things URLs** turned on; without it they silently do nothing. No configuration, no network access: everything stays on your Mac.",
+  "author": {
+    "name": "Charles Beaumont",
+    "url": "https://github.com/charlesbeaumont"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/charlesbeaumont/things-mcp.git"
+  },
+  "homepage": "https://github.com/charlesbeaumont/things-mcp",
+  "support": "https://github.com/charlesbeaumont/things-mcp/issues",
+  "icon": "icon.png",
+  "license": "Unlicense",
+  "keywords": ["things", "things3", "tasks", "todo", "gtd", "productivity"],
+  "server": {
+    "type": "binary",
+    "entry_point": "bin/things-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/bin/things-mcp",
+      "args": []
+    }
+  },
+  "tools": [
+    { "name": "get_inbox", "description": "Get todos from the Inbox." },
+    { "name": "get_today", "description": "Get the Today list, grouped like the Things UI." },
+    { "name": "get_upcoming", "description": "Get tasks scheduled for future dates." },
+    { "name": "get_anytime", "description": "Get the Anytime list." },
+    { "name": "get_someday", "description": "Get the Someday list, including tasks inside Someday projects." },
+    { "name": "get_logbook", "description": "Get completed and canceled tasks over a time period." },
+    { "name": "get_trash", "description": "Get trashed todos." },
+    { "name": "get_todos", "description": "Get all todos, optionally filtered to one project." },
+    { "name": "get_projects", "description": "Get all active projects." },
+    { "name": "get_areas", "description": "Get all areas." },
+    { "name": "get_tags", "description": "Get all tag definitions." },
+    { "name": "get_headings", "description": "Get project headings, optionally scoped to one project." },
+    { "name": "search", "description": "Search todos by text and any combination of filters." },
+    { "name": "add_todos", "description": "Create one or more todos in a single call." },
+    { "name": "add_project", "description": "Create a project, optionally with headings and todos." },
+    { "name": "update_todos", "description": "Update one or more existing todos in a single call." },
+    { "name": "update_project", "description": "Update an existing project." }
+  ],
+  "tools_generated": false,
+  "prompts_generated": false,
+  "compatibility": {
+    "platforms": ["darwin"]
+  }
+}

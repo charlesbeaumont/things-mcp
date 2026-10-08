@@ -2,6 +2,21 @@
 
 All notable changes to this project. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Ships as a Claude Desktop extension. No server or tool changes.
+
+### Added
+
+- `manifest.json` (MCPB manifest 0.3, `server.type: binary`) and a 512×512 `icon.png`. The extension lists all 17 tools and needs no user configuration.
+- `pack-mcpb.sh` / `bun run pack:mcpb [version]`: stages `manifest.json`, `icon.png` and `bin/things-mcp`, validates, and packs `dist/things-mcp-vX.Y.Z.mcpb`. Version defaults to `package.json`.
+- Release workflow packs the extension and attaches `things-mcp-vX.Y.Z.mcpb` next to the raw binary. The manifest version comes from the tag.
+- Release workflow dry runs on pull requests that touch packaging, and on `workflow_dispatch`. Dry runs upload the binary and `.mcpb` as workflow artifacts instead of publishing.
+
+### Verified
+
+- Installed a quarantined `.mcpb` (mimicking a GitHub download) by double-click. Claude Desktop kept the binary's exec bit and stripped the quarantine flag, so the manifest launches the binary directly with no `sh -c` wrapper.
+
 ## [0.2.0] — 2026-05-15
 
 Tool surface consolidated from 24 to 17. Heading creation supported for new projects. Breaking changes to `add_project`, `add_todo` → `add_todos`, and `update_todo` → `update_todos`.

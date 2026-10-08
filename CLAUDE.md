@@ -41,6 +41,7 @@ bun install                # once
 bun run build              # compiles bin/things-mcp (~58 MB arm64 Mach-O)
 bun src/index.ts           # run from source without compiling (dev)
 npx tsc --noEmit           # typecheck
+bun run pack:mcpb          # packs dist/things-mcp-vX.Y.Z.mcpb (Claude Desktop extension)
 ```
 
 Smoke test the binary directly:
@@ -77,7 +78,8 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 3. If it's a write, call `clearSomedayCache()` after `executeUrl`. The filter is memoized.
 4. If it's an update of any kind, call `requireAuth()` and pass the token — the URL scheme rejects updates without it.
 5. Add a corresponding `formatters` function only if the output shape is novel; otherwise reuse `formatTodo` etc.
-6. Rebuild (`bun run build`), smoke-test with the printf snippet above.
+6. Add the tool's name and a one-line description to `tools` in [manifest.json](manifest.json). Claude Desktop shows that list on the extension page.
+7. Rebuild (`bun run build`), smoke-test with the printf snippet above.
 
 ## Things you don't need to handle
 
@@ -98,7 +100,7 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 4. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
 5. Push: `git push origin main && git push origin vX.Y.Z`
 
-The tag push triggers the workflow on a `macos-14` (arm64) runner, which typechecks, builds the binary, stages it as `things-mcp-vX.Y.Z-darwin-arm64`, and uses `softprops/action-gh-release@v2` to create the GitHub Release with auto-generated notes from commits since the previous tag and the binary attached.
+The tag push triggers the workflow on a `macos-14` (arm64) runner, which typechecks, builds the binary, stages it as `things-mcp-vX.Y.Z-darwin-arm64`, packs `things-mcp-vX.Y.Z.mcpb` via `pack-mcpb.sh` (manifest version taken from the tag), and uses `softprops/action-gh-release@v2` to create the GitHub Release with auto-generated notes from commits since the previous tag and both files attached. Pull requests touching packaging run the same job as a dry run that uploads workflow artifacts instead of publishing.
 
 Don't rebuild locally and upload manually unless the workflow is broken — the whole point is that this is hands-off after `git push --tags`.
 

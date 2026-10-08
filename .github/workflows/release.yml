@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Dry runs build and pack without publishing; the .mcpb lands as a workflow artifact.
+  pull_request:
+    paths:
+      - manifest.json
+      - icon.png
+      - pack-mcpb.sh
+      - .github/workflows/release.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,6 +21,8 @@ jobs:
     # macos-14 is arm64 by default; bun build --compile produces a native
     # arm64 Mach-O and Bun's cross-compile from x86_64 is unreliable.
     runs-on: macos-14
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-test' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -30,16 +40,34 @@ jobs:
         run: bun run build
 
       - name: Stage versioned asset
-        run: cp bin/things-mcp things-mcp-${{ github.ref_name }}-darwin-arm64
+        run: cp bin/things-mcp things-mcp-$TAG-darwin-arm64
 
       - name: Verify binary
         run: |
-          file things-mcp-${{ github.ref_name }}-darwin-arm64
-          ls -lh things-mcp-${{ github.ref_name }}-darwin-arm64
+          file things-mcp-$TAG-darwin-arm64
+          ls -lh things-mcp-$TAG-darwin-arm64
 
-      - name: Create/update release with binary
+      - name: Pack Claude Desktop extension
+        run: |
+          ./pack-mcpb.sh "${TAG#v}"
+          mv dist/things-mcp-$TAG.mcpb .
+          unzip -Z things-mcp-$TAG.mcpb
+
+      - name: Upload dry-run artifacts
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: things-mcp-${{ env.TAG }}
+          path: |
+            things-mcp-${{ env.TAG }}-darwin-arm64
+            things-mcp-${{ env.TAG }}.mcpb
+
+      - name: Create/update release with binary and extension
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: things-mcp-${{ github.ref_name }}-darwin-arm64
+          files: |
+            things-mcp-${{ github.ref_name }}-darwin-arm64
+            things-mcp-${{ github.ref_name }}.mcpb
           generate_release_notes: true
           fail_on_unmatched_files: true

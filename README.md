@@ -17,6 +17,16 @@ SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) 
 
 ## Install
 
+### Install as Claude Desktop extension
+
+1. Download `things-mcp-vX.Y.Z.mcpb` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest).
+2. Double-click it. Claude Desktop opens an install dialog; click **Install**.
+3. Turn on **Things → Settings → General → "Enable Things URLs"**. Without it, all writes silently no-op.
+
+The extension needs no configuration and shows up as "Things 3" under Settings → Extensions. It requires an Apple Silicon Mac.
+
+### Raw binary
+
 **Quick path (no Bun needed):** download `things-mcp-vX.Y.Z-darwin-arm64` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest), then:
 
 ```bash
@@ -25,7 +35,9 @@ xattr -d com.apple.quarantine things-mcp-*-darwin-arm64
 mv things-mcp-*-darwin-arm64 /usr/local/bin/things-mcp   # or anywhere on $PATH
 ```
 
-**Build from source:** make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
+### Build from source
+
+Make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
 
 ```bash
 git clone https://github.com/charlesbeaumont/things-mcp.git
@@ -89,4 +101,5 @@ src/
 ```bash
 bun src/index.ts        # run from source (no build)
 npx tsc --noEmit        # typecheck
+bun run build && bun run pack:mcpb   # build the binary and pack dist/things-mcp-vX.Y.Z.mcpb
 ```
