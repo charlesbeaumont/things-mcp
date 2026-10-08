@@ -11,6 +11,8 @@ A Things 3 MCP server compiled to a single Bun binary.
 - 17 tools covering reads, bulk-by-default writes (`add_todos`, `update_todos`), structured project creation with headings, and a single multi-filter `search`.
 - Reads via direct SQLite (read-only) against the Things app database.
 - Writes via the Things URL scheme (`things:///json`), single URL call per batch.
+- Every tool returns structured JSON (`outputSchema` + `structuredContent`) alongside the plain-text output.
+- Asks before completing or canceling 5+ todos in one call, on clients that support MCP elicitation.
 - Behaviour matches the Things UI: Someday-project filtering, `groupTodayByParent`, effective list label (Today / Upcoming derived from `start` + `startDate`).
 
 SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) (MIT).
@@ -91,6 +93,7 @@ src/
   things-db.ts        bun:sqlite reader, SQL queries
   things-url.ts       URL builder + executor + /json bulk
   formatters.ts       Markdown formatters for tasks/projects/areas/tags/headings
+  structured.ts       JSON output builders + outputSchemas
   someday-filter.ts   Someday-project filter
   tools.ts            All 17 tool definitions
   types.ts            Task/Area/Tag types

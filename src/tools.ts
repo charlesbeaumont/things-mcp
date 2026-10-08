@@ -20,10 +20,39 @@ import {
   type JsonTodoAttributes,
   updateProjectUrl,
 } from "./things-url.ts";
-import type { TaskStatus, TaskType } from "./types.ts";
+import {
+  ADD_PROJECT_OUTPUT,
+  ADD_TODOS_OUTPUT,
+  AREAS_OUTPUT,
+  areaJson,
+  HEADINGS_OUTPUT,
+  headingJson,
+  PROJECTS_OUTPUT,
+  projectJson,
+  TAGS_OUTPUT,
+  tagJson,
+  TODOS_OUTPUT,
+  todoJson,
+  UPDATE_PROJECT_OUTPUT,
+  UPDATE_TODOS_OUTPUT,
+} from "./structured.ts";
+import type { Task, TaskStatus, TaskType } from "./types.ts";
 
 type Args = Record<string, unknown>;
-type Handler = (args: Args) => string;
+
+// `text` keeps the stable plain-text shape downstream skills parse;
+// `structured` is the same data as JSON, matching the tool's outputSchema.
+export interface ToolResult {
+  text: string;
+  structured: Record<string, unknown>;
+}
+
+export interface ToolContext {
+  // Resolves true when the user approves, or when the client can't ask.
+  confirm(message: string): Promise<boolean>;
+}
+
+type Handler = (args: Args, ctx: ToolContext) => ToolResult | Promise<ToolResult>;
 
 interface ToolAnnotations {
   title?: string;
@@ -37,9 +66,13 @@ export interface ToolDef {
   name: string;
   description: string;
   inputSchema: object;
+  outputSchema: object;
   annotations?: ToolAnnotations;
   handler: Handler;
 }
+
+// Completing or canceling this many todos in one call asks the user first.
+const CONFIRM_BULK_CLOSE_AT = 5;
 
 // All tools touch a local SQLite DB or the local Things URL scheme — never the network.
 const LOCAL = { openWorldHint: false } as const;
@@ -92,6 +125,17 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     if (!t) throw new Error("Could not read Things URL-scheme auth token");
     return t;
   };
+  const todoList = (todos: Task[], emptyText?: string): ToolResult => ({
+    text:
+      todos.length === 0 && emptyText
+        ? emptyText
+        : joinFormatted(todos.map((t) => formatTodo(db, t))),
+    structured: { todos: todos.map(todoJson) },
+  });
+  const requireProject = (uuid: string): void => {
+    const proj = db.get(uuid, false);
+    if (!proj || proj.type !== "project") throw new Error(`Invalid project UUID '${uuid}'`);
+  };
 
   // ---------- Read tools ----------
 
@@ -99,9 +143,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     name: "get_inbox",
     description: "Get todos from Inbox (unsorted captures with no list assigned).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () =>
-      joinFormatted(db.inbox().map((t) => formatTodo(db, t))),
+    handler: () => todoList(db.inbox()),
   });
 
   tools.push({
@@ -109,33 +153,27 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     description:
       "Get the Today list — scheduled for today, plus past-due scheduled tasks and past-deadline tasks. Output mirrors the Things UI grouping (by parent project/area) when that setting is enabled.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () => {
-      const todos = filterSomedayProjectTasks(db, db.today());
-      return joinFormatted(todos.map((t) => formatTodo(db, t)));
-    },
+    handler: () => todoList(filterSomedayProjectTasks(db, db.today())),
   });
 
   tools.push({
     name: "get_upcoming",
     description: "Get tasks scheduled for future dates (Things' Upcoming view).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () => {
-      const todos = filterSomedayProjectTasks(db, db.upcoming());
-      return joinFormatted(todos.map((t) => formatTodo(db, t)));
-    },
+    handler: () => todoList(filterSomedayProjectTasks(db, db.upcoming())),
   });
 
   tools.push({
     name: "get_anytime",
     description: "Get the Anytime list — tasks ready to do with no specific schedule.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () => {
-      const todos = filterSomedayProjectTasks(db, db.anytime());
-      return joinFormatted(todos.map((t) => formatTodo(db, t)));
-    },
+    handler: () => todoList(filterSomedayProjectTasks(db, db.anytime())),
   });
 
   tools.push({
@@ -143,13 +181,10 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     description:
       "Get the Someday list — deferred tasks. Includes tasks living inside projects marked Someday (which the raw SQL would otherwise miss).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () => {
-      const someday = db.someday();
-      const anytime = db.anytime();
-      const merged = expandSomedayWithProjectMembers(db, someday, anytime);
-      return joinFormatted(merged.map((t) => formatTodo(db, t)));
-    },
+    handler: () =>
+      todoList(expandSomedayWithProjectMembers(db, db.someday(), db.anytime())),
   });
 
   tools.push({
@@ -164,12 +199,12 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const period = optString(a, "period") ?? "7d";
       const limit = typeof a.limit === "number" ? a.limit : 50;
-      const todos = db.logbook(period).slice(0, limit);
-      return joinFormatted(todos.map((t) => formatTodo(db, t)));
+      return todoList(db.logbook(period).slice(0, limit));
     },
   });
 
@@ -177,8 +212,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     name: "get_trash",
     description: "Get trashed todos.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
-    handler: () => joinFormatted(db.trash().map((t) => formatTodo(db, t))),
+    handler: () => todoList(db.trash()),
   });
 
   tools.push({
@@ -192,17 +228,13 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const projectUuid = optString(a, "project_uuid");
       const includeItems = optBool(a, "include_items") ?? true;
-      if (projectUuid) {
-        const proj = db.get(projectUuid, false);
-        if (!proj || proj.type !== "project")
-          return `Error: Invalid project UUID '${projectUuid}'`;
-      }
-      const todos = db.todos(projectUuid, includeItems);
-      return joinFormatted(todos.map((t) => formatTodo(db, t)));
+      if (projectUuid) requireProject(projectUuid);
+      return todoList(db.todos(projectUuid, includeItems));
     },
   });
 
@@ -216,11 +248,15 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: PROJECTS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const projects = db.projects(includeItems);
-      return joinFormatted(projects.map((p) => formatProject(db, p, includeItems)));
+      return {
+        text: joinFormatted(projects.map((p) => formatProject(db, p, includeItems))),
+        structured: { projects: projects.map((p) => projectJson(db, p, includeItems)) },
+      };
     },
   });
 
@@ -234,11 +270,15 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: AREAS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const areas = db.getAreas();
-      return joinFormatted(areas.map((ar) => formatArea(db, ar, includeItems)));
+      return {
+        text: joinFormatted(areas.map((ar) => formatArea(db, ar, includeItems))),
+        structured: { areas: areas.map((ar) => areaJson(db, ar, includeItems)) },
+      };
     },
   });
 
@@ -252,11 +292,15 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: TAGS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const includeItems = optBool(a, "include_items") ?? false;
       const tags = db.getTags();
-      return joinFormatted(tags.map((t) => formatTag(db, t, includeItems)));
+      return {
+        text: joinFormatted(tags.map((t) => formatTag(db, t, includeItems))),
+        structured: { tags: tags.map((t) => tagJson(db, t, includeItems)) },
+      };
     },
   });
 
@@ -270,16 +314,16 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: HEADINGS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const projectUuid = optString(a, "project_uuid");
-      if (projectUuid) {
-        const proj = db.get(projectUuid, false);
-        if (!proj || proj.type !== "project")
-          return `Error: Invalid project UUID '${projectUuid}'`;
-      }
+      if (projectUuid) requireProject(projectUuid);
       const headings = db.headings(projectUuid);
-      return joinFormatted(headings.map((h) => formatHeading(db, h)));
+      return {
+        text: joinFormatted(headings.map((h) => formatHeading(db, h))),
+        structured: { headings: headings.map(headingJson) },
+      };
     },
   });
 
@@ -315,6 +359,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       },
       additionalProperties: false,
     },
+    outputSchema: TODOS_OUTPUT,
     annotations: READ,
     handler: (a) => {
       const status =
@@ -337,8 +382,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
         });
       }
       db.hydrateTasks(tasks, true);
-      if (tasks.length === 0) return "No matching todos found";
-      return joinFormatted(tasks.map((t) => formatTodo(db, t)));
+      return todoList(tasks, "No matching todos found");
     },
   });
 
@@ -399,6 +443,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["todos"],
       additionalProperties: false,
     },
+    outputSchema: ADD_TODOS_OUTPUT,
     annotations: CREATE,
     handler: (a) => {
       const todos = a.todos;
@@ -419,7 +464,10 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       for (const url of urls) executeUrl(url);
       clearSomedayCache();
       const n = todos.length;
-      return `Created ${n} todo${n === 1 ? "" : "s"}${urls.length > 1 ? ` (in ${urls.length} batches due to URL length)` : ""}`;
+      return {
+        text: `Created ${n} todo${n === 1 ? "" : "s"}${urls.length > 1 ? ` (in ${urls.length} batches due to URL length)` : ""}`,
+        structured: { created: n, batches: urls.length },
+      };
     },
   });
 
@@ -573,6 +621,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["title"],
       additionalProperties: false,
     },
+    outputSchema: ADD_PROJECT_OUTPUT,
     annotations: CREATE,
     handler: (a) => {
       const title = reqString(a, "title");
@@ -595,7 +644,10 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       const urls = chunkedJsonUrls([item]);
       for (const url of urls) executeUrl(url);
       clearSomedayCache();
-      return `Created new project: ${title}${children.length > 0 ? ` (with ${children.length} item${children.length === 1 ? "" : "s"})` : ""}`;
+      return {
+        text: `Created new project: ${title}${children.length > 0 ? ` (with ${children.length} item${children.length === 1 ? "" : "s"})` : ""}`,
+        structured: { title, items: children.length },
+      };
     },
   });
 
@@ -645,8 +697,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["updates"],
       additionalProperties: false,
     },
+    outputSchema: UPDATE_TODOS_OUTPUT,
     annotations: UPDATE,
-    handler: (a) => {
+    handler: async (a, ctx) => {
       const token = requireAuth();
       const updates = a.updates;
       if (!Array.isArray(updates) || updates.length === 0)
@@ -677,11 +730,32 @@ export function buildTools(db: ThingsDB): ToolDef[] {
           },
         };
       });
+      const closing = (updates as Args[])
+        .filter((r) => optBool(r, "completed") === true || optBool(r, "canceled") === true)
+        .map((r) => reqString(r, "id"));
+      if (closing.length >= CONFIRM_BULK_CLOSE_AT) {
+        const titles = closing
+          .slice(0, 10)
+          .map((id) => `- ${db.getTaskByUuid(id)?.title ?? id}`);
+        const more = closing.length > 10 ? `\n…and ${closing.length - 10} more` : "";
+        const ok = await ctx.confirm(
+          `Complete or cancel ${closing.length} todos in Things?\n${titles.join("\n")}${more}`,
+        );
+        if (!ok) {
+          return {
+            text: `Not applied: the user declined completing or canceling ${closing.length} todos. Nothing changed.`,
+            structured: { applied: false, updated: 0, batches: 0 },
+          };
+        }
+      }
       const urls = chunkedJsonUrls(items, token);
       for (const url of urls) executeUrl(url);
       clearSomedayCache();
       const n = updates.length;
-      return `Updated ${n} todo${n === 1 ? "" : "s"}${urls.length > 1 ? ` (in ${urls.length} batches due to URL length)` : ""}`;
+      return {
+        text: `Updated ${n} todo${n === 1 ? "" : "s"}${urls.length > 1 ? ` (in ${urls.length} batches due to URL length)` : ""}`,
+        structured: { applied: true, updated: n, batches: urls.length },
+      };
     },
   });
 
@@ -704,6 +778,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       required: ["id"],
       additionalProperties: false,
     },
+    outputSchema: UPDATE_PROJECT_OUTPUT,
     annotations: UPDATE,
     handler: (a) => {
       const id = reqString(a, "id");
@@ -722,7 +797,7 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       );
       executeUrl(url);
       clearSomedayCache();
-      return `Updated project with ID: ${id}`;
+      return { text: `Updated project with ID: ${id}`, structured: { id } };
     },
   });
 

@@ -16,6 +16,7 @@ src/tools.ts          All 17 tool definitions (JSON Schema + handler)
 src/things-db.ts      bun:sqlite reader. SQL ported from things.py (MIT).
 src/things-url.ts     Things URL scheme builder + executor
 src/formatters.ts     Markdown formatters for todos/projects/areas/tags/headings
+src/structured.ts     JSON builders + outputSchemas mirroring the formatters
 src/someday-filter.ts Hides tasks inside Someday projects from Today/Upcoming/Anytime
 src/types.ts          Task/Area/Tag types
 ```
@@ -60,6 +61,8 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 - All tool inputs are JSON Schema (not Zod) — keeps the dep tree to just `@modelcontextprotocol/sdk`.
 - Tool names are snake_case (`get_today`, `add_todos`, etc.). Downstream skills depend on the names, so don't rename without a real reason.
 - Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Output shape is stable so downstream skills that parse this output keep working across versions.
+- Every tool also returns `structuredContent` matching its `outputSchema` (see [src/structured.ts](src/structured.ts)). Handlers return `{ text, structured }`. The text stays the contract for skills; the JSON is additive.
+- Risky bulk writes call `ctx.confirm(message)`, which uses MCP form elicitation when the client supports it and resolves `true` otherwise. Today only `update_todos` uses it, for 5+ completes or cancels (`CONFIRM_BULK_CLOSE_AT`). Project completes need no gate: Things ignores them until every child is closed.
 - Writes are array-shaped by default (`add_todos`, `update_todos`). Size-1 calls go through the same `/json` path — there are no separate single-vs-bulk variants.
 
 ## Rules for changes
@@ -77,7 +80,7 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 2. Define `inputSchema` as JSON Schema inline. Reuse the `STR`, `STR_ARR`, `BOOL` constants for brevity.
 3. If it's a write, call `clearSomedayCache()` after `executeUrl`. The filter is memoized.
 4. If it's an update of any kind, call `requireAuth()` and pass the token — the URL scheme rejects updates without it.
-5. Add a corresponding `formatters` function only if the output shape is novel; otherwise reuse `formatTodo` etc.
+5. Add a corresponding `formatters` function only if the output shape is novel; otherwise reuse `formatTodo` etc. Do the same in `structured.ts` and set `outputSchema`; the SDK client rejects `structuredContent` that doesn't match it.
 6. Add the tool's name and a one-line description to `tools` in [manifest.json](manifest.json). Claude Desktop shows that list on the extension page.
 7. Rebuild (`bun run build`), smoke-test with the printf snippet above.
 

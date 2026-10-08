@@ -5,8 +5,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import pkg from "../package.json" with { type: "json" };
 import { ThingsDB } from "./things-db.ts";
-import { buildTools } from "./tools.ts";
+import { buildTools, type ToolContext } from "./tools.ts";
 
 const SERVER_INSTRUCTIONS = `\
 This server reads from and writes to Things 3, the macOS task app, on the user's local machine.
@@ -43,7 +44,7 @@ async function main(): Promise<void> {
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
   const server = new Server(
-    { name: "things-mcp", version: "0.2.0" },
+    { name: "things-mcp", version: pkg.version },
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
@@ -52,11 +53,31 @@ async function main(): Promise<void> {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
+      outputSchema: t.outputSchema,
       annotations: t.annotations,
     })),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, (request) => {
+  // Clients without form elicitation get no prompt; the tool annotations
+  // still mark writes as destructive so the client can gate them itself.
+  const ctx: ToolContext = {
+    async confirm(message) {
+      const e = server.getClientCapabilities()?.elicitation;
+      if (!e || (e.form === undefined && e.url !== undefined)) return true;
+      const res = await server.elicitInput({
+        mode: "form",
+        message,
+        requestedSchema: {
+          type: "object",
+          properties: { confirm: { type: "boolean", title: "Apply these changes", default: true } },
+          required: ["confirm"],
+        },
+      });
+      return res.action === "accept" && res.content?.confirm === true;
+    },
+  };
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const tool = toolMap.get(request.params.name);
     if (!tool) {
       return {
@@ -67,8 +88,11 @@ async function main(): Promise<void> {
       };
     }
     try {
-      const text = tool.handler((request.params.arguments ?? {}) as Record<string, unknown>);
-      return { content: [{ type: "text" as const, text }] };
+      const { text, structured } = await tool.handler(
+        (request.params.arguments ?? {}) as Record<string, unknown>,
+        ctx,
+      );
+      return { content: [{ type: "text" as const, text }], structuredContent: structured };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {

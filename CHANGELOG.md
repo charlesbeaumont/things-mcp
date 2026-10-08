@@ -4,7 +4,7 @@ All notable changes to this project. Format loosely follows [Keep a Changelog](h
 
 ## [Unreleased]
 
-Ships as a Claude Desktop extension. No server or tool changes.
+Ships as a Claude Desktop extension. Tools gain structured output and a confirmation before bulk closes; text output is unchanged.
 
 ### Added
 
@@ -12,6 +12,14 @@ Ships as a Claude Desktop extension. No server or tool changes.
 - `pack-mcpb.sh` / `bun run pack:mcpb [version]`: stages `manifest.json`, `icon.png` and `bin/things-mcp`, validates, and packs `dist/things-mcp-vX.Y.Z.mcpb`. Version defaults to `package.json`.
 - Release workflow packs the extension and attaches `things-mcp-vX.Y.Z.mcpb` next to the raw binary. The manifest version comes from the tag.
 - Release workflow dry runs on pull requests that touch packaging, and on `workflow_dispatch`. Dry runs upload the binary and `.mcpb` as workflow artifacts instead of publishing.
+- Structured output: every tool declares an `outputSchema` and returns `structuredContent` next to the unchanged text. Read tools return `{todos}`, `{projects}`, `{areas}`, `{tags}` or `{headings}`; write tools return counts. Todos carry the effective list label (Today, Upcoming…) the text shows.
+- Confirmation before bulk closes: `update_todos` asks the user through MCP elicitation before it completes or cancels 5 or more todos in one call. Declining returns `applied: false` and writes nothing. Clients without form elicitation skip the prompt.
+
+### Changed
+
+- `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1 (protocol `2025-11-25`).
+- Server version comes from `package.json` instead of a hardcoded string.
+- `get_todos` and `get_headings` with an unknown `project_uuid` now return `isError: true`. The message text is unchanged.
 
 ### Verified
 
