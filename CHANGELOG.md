@@ -19,6 +19,7 @@ Ships as a Claude Desktop extension. Tools gain structured output and a confirma
 
 - `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1 (protocol `2025-11-25`).
 - Server version comes from `package.json` instead of a hardcoded string.
+- The server answers `initialize` and `tools/list` before touching the Things database. It opens the database on the first tool call. Previously a pending macOS "access data from other apps" prompt blocked startup, and Cowork reported "Unable to connect to extension server". If access is still blocked after 20 s, the tool call returns an error explaining how to allow it.
 - `get_todos` and `get_headings` with an unknown `project_uuid` now return `isError: true`. The message text is unchanged.
 
 ### Verified

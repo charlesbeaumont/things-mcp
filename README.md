@@ -27,6 +27,8 @@ SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) 
 
 The extension needs no configuration and shows up as "Things 3" under Settings → Extensions. It requires an Apple Silicon Mac.
 
+On first use, macOS may ask whether Claude can "access data from other apps". Click Allow, or the Things tools report that access is blocked. To stop the prompt coming back, add Claude under System Settings → Privacy & Security → Full Disk Access.
+
 ### Raw binary
 
 **Quick path (no Bun needed):** download `things-mcp-vX.Y.Z-darwin-arm64` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest), then:

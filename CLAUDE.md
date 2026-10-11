@@ -23,6 +23,7 @@ src/types.ts          Task/Area/Tag types
 
 **Two data paths:**
 1. **Reads**: open `~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite` in `readonly: true` mode. Schema tables: `TMTask`, `TMArea`, `TMTag`, `TMTaskTag`, `TMAreaTag`, `TMChecklistItem`, `TMSettings`.
+   The database opens on the first tool call, not at startup (`ThingsDB.open()`). macOS gates the Group Container behind an "access data from other apps" prompt, and file calls block until the user answers. Opening at startup hung `initialize` and broke Cowork. `findDatabasePath()` gives up after 20 s with an error that tells the user how to allow access.
 2. **Writes**: all writes go through `things:///json` via `spawnSync("open", ["-g", url])`. Update operations require the auth-token read from `TMSettings.uriSchemeAuthenticationToken` (single-row table).
 
 **Bulk-by-default writes**: `add_todos` and `update_todos` take arrays (size 1 is fine). They compile to a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling. For `/json` update operations, `auth-token` goes at the URL level (not per-item) — empirically confirmed.

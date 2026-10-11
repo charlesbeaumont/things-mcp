@@ -88,6 +88,7 @@ async function main(): Promise<void> {
       };
     }
     try {
+      await db.open();
       const { text, structured } = await tool.handler(
         (request.params.arguments ?? {}) as Record<string, unknown>,
         ctx,
