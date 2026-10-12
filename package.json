@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "bun src/index.ts",
-    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile bin/things-mcp",
+    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile bin/things-mcp && ./sign-binary.sh",
     "typecheck": "tsc --noEmit",
     "pack:mcpb": "./pack-mcpb.sh"
   },
