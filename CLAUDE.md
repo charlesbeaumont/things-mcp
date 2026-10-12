@@ -16,12 +16,15 @@ src/tools.ts          All 17 tool definitions (JSON Schema + handler)
 src/things-db.ts      bun:sqlite reader. SQL ported from things.py (MIT).
 src/things-url.ts     Things URL scheme builder + executor
 src/formatters.ts     Markdown formatters for todos/projects/areas/tags/headings
+src/structured.ts     JSON builders + outputSchemas mirroring the formatters
 src/someday-filter.ts Hides tasks inside Someday projects from Today/Upcoming/Anytime
 src/types.ts          Task/Area/Tag types
 ```
 
 **Two data paths:**
 1. **Reads**: open `~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite` in `readonly: true` mode. Schema tables: `TMTask`, `TMArea`, `TMTag`, `TMTaskTag`, `TMAreaTag`, `TMChecklistItem`, `TMSettings`.
+   The database opens on the first tool call, not at startup (`ThingsDB.open()`). macOS gates the Group Container behind an "access data from other apps" prompt, and file calls block until the user answers. Opening at startup hung `initialize` and broke Cowork. `findDatabasePath()` gives up after 20 s with an error that tells the user how to allow access.
+   macOS keys that approval to the binary's designated requirement. `sign-binary.sh` signs with the `things-mcp local` certificate when the keychain has it, otherwise ad-hoc, always with identifier `com.charlesbeaumont.things-mcp`. Ad-hoc means a new approval per build. CI signs with the certificate when the `MACOS_SIGN_P12` secrets exist. Don't add hardened runtime (`--options runtime`): Bun's JIT needs extra entitlements under it.
 2. **Writes**: all writes go through `things:///json` via `spawnSync("open", ["-g", url])`. Update operations require the auth-token read from `TMSettings.uriSchemeAuthenticationToken` (single-row table).
 
 **Bulk-by-default writes**: `add_todos` and `update_todos` take arrays (size 1 is fine). They compile to a single `things:///json?data=[...]` URL. `chunkedJsonUrls` in [src/things-url.ts](src/things-url.ts) splits at ~200 KB to stay under the `open` argv ceiling. For `/json` update operations, `auth-token` goes at the URL level (not per-item) — empirically confirmed.
@@ -38,9 +41,10 @@ src/types.ts          Task/Area/Tag types
 
 ```bash
 bun install                # once
-bun run build              # compiles bin/things-mcp (~58 MB arm64 Mach-O)
+bun run build              # compiles bin/things-mcp (~58 MB arm64 Mach-O), then signs it via sign-binary.sh
 bun src/index.ts           # run from source without compiling (dev)
 npx tsc --noEmit           # typecheck
+bun run pack:mcpb          # packs dist/things-mcp-vX.Y.Z.mcpb (Claude Desktop extension)
 ```
 
 Smoke test the binary directly:
@@ -59,6 +63,8 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 - All tool inputs are JSON Schema (not Zod) — keeps the dep tree to just `@modelcontextprotocol/sdk`.
 - Tool names are snake_case (`get_today`, `add_todos`, etc.). Downstream skills depend on the names, so don't rename without a real reason.
 - Output is plain text (markdown-ish), joined by `\n\n---\n\n`. Output shape is stable so downstream skills that parse this output keep working across versions.
+- Every tool also returns `structuredContent` matching its `outputSchema` (see [src/structured.ts](src/structured.ts)). Handlers return `{ text, structured }`. The text stays the contract for skills; the JSON is additive.
+- Risky bulk writes call `ctx.confirm(message)`, which uses MCP form elicitation when the client supports it and resolves `true` otherwise. Today only `update_todos` uses it, for 5+ completes or cancels (`CONFIRM_BULK_CLOSE_AT`). Project completes need no gate: Things ignores them until every child is closed.
 - Writes are array-shaped by default (`add_todos`, `update_todos`). Size-1 calls go through the same `/json` path — there are no separate single-vs-bulk variants.
 
 ## Rules for changes
@@ -76,8 +82,9 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 2. Define `inputSchema` as JSON Schema inline. Reuse the `STR`, `STR_ARR`, `BOOL` constants for brevity.
 3. If it's a write, call `clearSomedayCache()` after `executeUrl`. The filter is memoized.
 4. If it's an update of any kind, call `requireAuth()` and pass the token — the URL scheme rejects updates without it.
-5. Add a corresponding `formatters` function only if the output shape is novel; otherwise reuse `formatTodo` etc.
-6. Rebuild (`bun run build`), smoke-test with the printf snippet above.
+5. Add a corresponding `formatters` function only if the output shape is novel; otherwise reuse `formatTodo` etc. Do the same in `structured.ts` and set `outputSchema`; the SDK client rejects `structuredContent` that doesn't match it.
+6. Add the tool's name and a one-line description to `tools` in [manifest.json](manifest.json). Claude Desktop shows that list on the extension page.
+7. Rebuild (`bun run build`), smoke-test with the printf snippet above.
 
 ## Things you don't need to handle
 
@@ -98,7 +105,7 @@ After any change that affects MCP behavior, rebuild and prompt the user to resta
 4. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
 5. Push: `git push origin main && git push origin vX.Y.Z`
 
-The tag push triggers the workflow on a `macos-14` (arm64) runner, which typechecks, builds the binary, stages it as `things-mcp-vX.Y.Z-darwin-arm64`, and uses `softprops/action-gh-release@v2` to create the GitHub Release with auto-generated notes from commits since the previous tag and the binary attached.
+The tag push triggers the workflow on a `macos-14` (arm64) runner, which typechecks, builds the binary, stages it as `things-mcp-vX.Y.Z-darwin-arm64`, packs `things-mcp-vX.Y.Z.mcpb` via `pack-mcpb.sh` (manifest version taken from the tag), and uses `softprops/action-gh-release@v2` to create the GitHub Release with auto-generated notes from commits since the previous tag and both files attached. Pull requests touching packaging run the same job as a dry run that uploads workflow artifacts instead of publishing.
 
 Don't rebuild locally and upload manually unless the workflow is broken — the whole point is that this is hands-off after `git push --tags`.
 

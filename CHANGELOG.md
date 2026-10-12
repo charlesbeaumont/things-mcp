@@ -2,6 +2,31 @@
 
 All notable changes to this project. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Ships as a Claude Desktop extension. Tools gain structured output and a confirmation before bulk closes; text output is unchanged.
+
+### Added
+
+- `manifest.json` (MCPB manifest 0.3, `server.type: binary`) and a 512×512 `icon.png`. The extension lists all 17 tools and needs no user configuration.
+- `pack-mcpb.sh` / `bun run pack:mcpb [version]`: stages `manifest.json`, `icon.png` and `bin/things-mcp`, validates, and packs `dist/things-mcp-vX.Y.Z.mcpb`. Version defaults to `package.json`.
+- Release workflow packs the extension and attaches `things-mcp-vX.Y.Z.mcpb` next to the raw binary. The manifest version comes from the tag.
+- Release workflow dry runs on pull requests that touch packaging, and on `workflow_dispatch`. Dry runs upload the binary and `.mcpb` as workflow artifacts instead of publishing.
+- Structured output: every tool declares an `outputSchema` and returns `structuredContent` next to the unchanged text. Read tools return `{todos}`, `{projects}`, `{areas}`, `{tags}` or `{headings}`; write tools return counts. Todos carry the effective list label (Today, Upcoming…) the text shows.
+- Confirmation before bulk closes: `update_todos` asks the user through MCP elicitation before it completes or cancels 5 or more todos in one call. Declining returns `applied: false` and writes nothing. Clients without form elicitation skip the prompt.
+
+### Changed
+
+- `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1 (protocol `2025-11-25`).
+- Server version comes from `package.json` instead of a hardcoded string.
+- `bun run build` signs the binary with identifier `com.charlesbeaumont.things-mcp` via `sign-binary.sh`. With the `things-mcp local` certificate in the keychain, or the `MACOS_SIGN_P12` secrets in CI, the signature stays the same across builds. macOS then keeps its "access data from other apps" approval across rebuilds. Without a certificate it signs ad-hoc as before.
+- The server answers `initialize` and `tools/list` before touching the Things database. It opens the database on the first tool call. Previously a pending macOS "access data from other apps" prompt blocked startup, and Cowork reported "Unable to connect to extension server". If access is still blocked after 20 s, the tool call returns an error explaining how to allow it.
+- `get_todos` and `get_headings` with an unknown `project_uuid` now return `isError: true`. The message text is unchanged.
+
+### Verified
+
+- Installed a quarantined `.mcpb` (mimicking a GitHub download) by double-click. Claude Desktop kept the binary's exec bit and stripped the quarantine flag, so the manifest launches the binary directly with no `sh -c` wrapper.
+
 ## [0.2.0] — 2026-05-15
 
 Tool surface consolidated from 24 to 17. Heading creation supported for new projects. Breaking changes to `add_project`, `add_todo` → `add_todos`, and `update_todo` → `update_todos`.

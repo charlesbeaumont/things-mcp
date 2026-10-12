@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { globSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -15,8 +15,9 @@ import type {
 // SQL queries below are ported from things.py (MIT-licensed)
 // https://github.com/thingsapi/things.py/blob/main/things/database.py
 
-const DB_GLOB =
-  "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite";
+const GROUP_CONTAINER = "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac";
+const DB_RELATIVE = "Things Database.thingsdatabase/main.sqlite";
+const LOCATE_TIMEOUT_MS = 20_000;
 // things.py threshold; anything below means a pre-3.15.16 schema we don't support.
 const MIN_SUPPORTED_DB_VERSION = 22;
 
@@ -81,15 +82,35 @@ function escapeString(s: string): string {
   return s.replace(/'/g, "''");
 }
 
-function findDatabasePath(): string {
-  const home = homedir();
-  const matches = globSync(DB_GLOB, { cwd: home });
-  if (matches.length === 0) {
-    throw new Error(
-      `Things database not found. Looked under ~/${DB_GLOB}. Is Things 3 installed?`,
+// macOS gates another app's Group Container behind the "would like to access
+// data from other apps" prompt, and file calls block until the user answers.
+// Async readdir keeps the event loop free so the timeout can fire.
+async function findDatabasePath(): Promise<string> {
+  const container = join(homedir(), GROUP_CONTAINER);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const blocked = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            'macOS has not allowed access to Things data yet. Look for a "would like to access data from other apps" prompt and click Allow, or add Claude under System Settings → Privacy & Security → Full Disk Access. Then retry.',
+          ),
+        ),
+      LOCATE_TIMEOUT_MS,
     );
+  });
+  try {
+    const entries = await Promise.race([readdir(container).catch(() => []), blocked]);
+    const dataDir = entries.find((e) => e.startsWith("ThingsData-"));
+    if (!dataDir) {
+      throw new Error(
+        `Things database not found under ~/${GROUP_CONTAINER}. Is Things 3 installed?`,
+      );
+    }
+    return join(container, dataDir, DB_RELATIVE);
+  } finally {
+    clearTimeout(timer);
   }
-  return join(home, matches[0]!);
 }
 
 // --- Filter builders ---
@@ -272,14 +293,22 @@ export interface TaskQuery {
 }
 
 export class ThingsDB {
-  private db: Database;
+  private db!: Database;
+  private opening: Promise<void> | undefined;
   private cachedToken: string | null | undefined = undefined;
   private cachedGroupTodayByParent: boolean | undefined = undefined;
 
-  constructor(filepath?: string) {
-    const path = filepath ?? findDatabasePath();
-    this.db = new Database(path, { readonly: true });
-    this.assertSchemaVersion();
+  // Deferred to the first tool call so initialize and tools/list never wait on
+  // the macOS data-access prompt. A failed open is retried on the next call.
+  open(): Promise<void> {
+    this.opening ??= (async () => {
+      this.db = new Database(await findDatabasePath(), { readonly: true });
+      this.assertSchemaVersion();
+    })().catch((err) => {
+      this.opening = undefined;
+      throw err;
+    });
+    return this.opening;
   }
 
   private assertSchemaVersion(): void {

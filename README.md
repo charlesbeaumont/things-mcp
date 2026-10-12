@@ -11,11 +11,25 @@ A Things 3 MCP server compiled to a single Bun binary.
 - 17 tools covering reads, bulk-by-default writes (`add_todos`, `update_todos`), structured project creation with headings, and a single multi-filter `search`.
 - Reads via direct SQLite (read-only) against the Things app database.
 - Writes via the Things URL scheme (`things:///json`), single URL call per batch.
+- Every tool returns structured JSON (`outputSchema` + `structuredContent`) alongside the plain-text output.
+- Asks before completing or canceling 5+ todos in one call, on clients that support MCP elicitation.
 - Behaviour matches the Things UI: Someday-project filtering, `groupTodayByParent`, effective list label (Today / Upcoming derived from `start` + `startDate`).
 
 SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) (MIT).
 
 ## Install
+
+### Install as Claude Desktop extension
+
+1. Download `things-mcp-vX.Y.Z.mcpb` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest).
+2. Double-click it. Claude Desktop opens an install dialog; click **Install**.
+3. Turn on **Things → Settings → General → "Enable Things URLs"**. Without it, all writes silently no-op.
+
+The extension needs no configuration and shows up as "Things 3" under Settings → Extensions. It requires an Apple Silicon Mac.
+
+On first use, macOS may ask whether Claude can "access data from other apps". Click Allow, or the Things tools report that access is blocked. Release builds signed with a certificate keep that approval across updates. Full Disk Access for Claude also stops the prompt, but gives Claude much broader access.
+
+### Raw binary
 
 **Quick path (no Bun needed):** download `things-mcp-vX.Y.Z-darwin-arm64` from the [Releases page](https://github.com/charlesbeaumont/things-mcp/releases/latest), then:
 
@@ -25,7 +39,9 @@ xattr -d com.apple.quarantine things-mcp-*-darwin-arm64
 mv things-mcp-*-darwin-arm64 /usr/local/bin/things-mcp   # or anywhere on $PATH
 ```
 
-**Build from source:** make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
+### Build from source
+
+Make sure [Bun](https://bun.sh) is installed (`brew install oven-sh/bun/bun`), then:
 
 ```bash
 git clone https://github.com/charlesbeaumont/things-mcp.git
@@ -79,6 +95,7 @@ src/
   things-db.ts        bun:sqlite reader, SQL queries
   things-url.ts       URL builder + executor + /json bulk
   formatters.ts       Markdown formatters for tasks/projects/areas/tags/headings
+  structured.ts       JSON output builders + outputSchemas
   someday-filter.ts   Someday-project filter
   tools.ts            All 17 tool definitions
   types.ts            Task/Area/Tag types
@@ -89,4 +106,22 @@ src/
 ```bash
 bun src/index.ts        # run from source (no build)
 npx tsc --noEmit        # typecheck
+bun run build && bun run pack:mcpb   # build the binary and pack dist/things-mcp-vX.Y.Z.mcpb
 ```
+
+### Signing
+
+`bun run build` signs the binary through `sign-binary.sh`. macOS ties its "access data from other apps" approval to the binary's signature. An ad-hoc signature changes on every build, so each new build asks again. A certificate signature stays the same, so one Allow lasts across rebuilds and releases.
+
+Without a certificate the build signs ad-hoc and works the same, apart from the repeat prompt. To sign with a certificate:
+
+1. Open Keychain Access → Certificate Assistant → Create a Certificate…
+2. Name it `things-mcp local`, identity type Self-Signed Root, certificate type Code Signing. Use another name by setting `THINGS_MCP_SIGN_IDENTITY`.
+3. Rebuild. `codesign -dv bin/things-mcp` should show `Authority=things-mcp local`.
+
+To sign release builds with the same certificate:
+
+1. Export it from Keychain Access as a `.p12` with a password.
+2. Add two repository secrets: `MACOS_SIGN_P12` (output of `base64 -i cert.p12`) and `MACOS_SIGN_P12_PASSWORD`.
+
+Without the secrets, release builds sign ad-hoc. Everyone can still install them.
