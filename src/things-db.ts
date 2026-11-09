@@ -82,6 +82,15 @@ function escapeString(s: string): string {
   return s.replace(/'/g, "''");
 }
 
+function denyOrEmpty(err: NodeJS.ErrnoException): string[] {
+  if (err.code === "EPERM" || err.code === "EACCES") {
+    throw new Error(
+      'macOS denied access to Things data ("access data from other apps" was refused for Claude). Reset it with `tccutil reset SystemPolicyAppData com.anthropic.claudefordesktop`, restart Claude, and click Allow when asked.',
+    );
+  }
+  return [];
+}
+
 // macOS gates another app's Group Container behind the "would like to access
 // data from other apps" prompt, and file calls block until the user answers.
 // Async readdir keeps the event loop free so the timeout can fire.
@@ -100,7 +109,7 @@ async function findDatabasePath(): Promise<string> {
     );
   });
   try {
-    const entries = await Promise.race([readdir(container).catch(() => []), blocked]);
+    const entries = await Promise.race([readdir(container).catch(denyOrEmpty), blocked]);
     const dataDir = entries.find((e) => e.startsWith("ThingsData-"));
     if (!dataDir) {
       throw new Error(
