@@ -20,9 +20,9 @@
   "keywords": ["things", "things3", "tasks", "todo", "gtd", "productivity"],
   "server": {
     "type": "binary",
-    "entry_point": "bin/things-mcp",
+    "entry_point": "things-mcp.app/Contents/MacOS/things-mcp",
     "mcp_config": {
-      "command": "${__dirname}/bin/things-mcp",
+      "command": "${__dirname}/things-mcp.app/Contents/MacOS/things-mcp",
       "args": []
     }
   },

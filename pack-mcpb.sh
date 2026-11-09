@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# pack-mcpb.sh [version] — stage manifest.json, icon.png and bin/things-mcp, then pack a .mcpb.
+# pack-mcpb.sh [version] — stage manifest.json, icon.png and things-mcp.app, then pack a .mcpb.
+# The binary ships inside an app bundle because macOS 27 only lets the user grant
+# "Data shared by Things" (Files & Folders) to code with a bundle identifier.
 # Version defaults to package.json's. CI passes the tag with the leading "v" stripped.
 # Expects bin/things-mcp to exist already (bun run build).
 set -euo pipefail
@@ -15,11 +17,16 @@ if [ ! -x bin/things-mcp ]; then
   exit 1
 fi
 
+APP="$STAGE/things-mcp.app"
 rm -rf "$STAGE" "$OUT"
-mkdir -p "$STAGE/bin"
+mkdir -p "$APP/Contents/MacOS"
 cp icon.png "$STAGE/"
-cp bin/things-mcp "$STAGE/bin/things-mcp"
-chmod 755 "$STAGE/bin/things-mcp"
+cp bin/things-mcp "$APP/Contents/MacOS/things-mcp"
+chmod 755 "$APP/Contents/MacOS/things-mcp"
+cp macos/Info.plist "$APP/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+./sign-binary.sh "$APP"
 VERSION="$VERSION" bun -e '
   const m = await Bun.file("manifest.json").json();
   m.version = process.env.VERSION;

@@ -27,7 +27,7 @@ SQL queries are ported from [things.py](https://github.com/thingsapi/things.py) 
 
 The extension needs no configuration and shows up as "Things 3" under Settings → Extensions. It requires an Apple Silicon Mac.
 
-On first use, macOS may ask whether Claude can "access data from other apps". Click Allow, or the Things tools report that access is blocked. Release builds signed with a certificate keep that approval across updates. Full Disk Access for Claude also stops the prompt, but gives Claude much broader access.
+Reading Things' data needs one macOS permission. The first Things call fails with "macOS denied access to Things data". Then open System Settings → Privacy & Security → Files & Folders, find **Things MCP**, and turn on **Data shared by Things and affiliated apps**. Older macOS versions show an "access data from other apps" prompt instead; click Allow.
 
 ### Raw binary
 
@@ -111,7 +111,7 @@ bun run build && bun run pack:mcpb   # build the binary and pack dist/things-mcp
 
 ### Signing
 
-`bun run build` signs the binary through `sign-binary.sh`. macOS ties its "access data from other apps" approval to the binary's signature. An ad-hoc signature changes on every build, so each new build asks again. A certificate signature stays the same, so one Allow lasts across rebuilds and releases.
+`bun run build` signs the binary through `sign-binary.sh`. The extension wraps it in `things-mcp.app`, because macOS 27 only lets you grant Things data access to an app with a bundle identifier (`com.charlesbeaumont.things-mcp`). macOS ties that grant to the bundle's signature. An ad-hoc signature changes on every build, so each new build needs the switch turned on again. A certificate signature stays the same, so one grant lasts across rebuilds and releases.
 
 Without a certificate the build signs ad-hoc and works the same, apart from the repeat prompt. To sign with a certificate:
 

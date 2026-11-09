@@ -85,7 +85,7 @@ function escapeString(s: string): string {
 function denyOrEmpty(err: NodeJS.ErrnoException): string[] {
   if (err.code === "EPERM" || err.code === "EACCES") {
     throw new Error(
-      'macOS denied access to Things data ("access data from other apps" was refused for Claude). Reset it with `tccutil reset SystemPolicyAppData com.anthropic.claudefordesktop`, restart Claude, and click Allow when asked.',
+      'macOS denied access to Things data. Open System Settings → Privacy & Security → Files & Folders, find Things MCP, and turn on "Data shared by Things and affiliated apps". Then retry.',
     );
   }
   return [];
@@ -102,7 +102,7 @@ async function findDatabasePath(): Promise<string> {
       () =>
         reject(
           new Error(
-            'macOS has not allowed access to Things data yet. Look for a "would like to access data from other apps" prompt and click Allow, or add Claude under System Settings → Privacy & Security → Full Disk Access. Then retry.',
+            'macOS has not allowed access to Things data yet. Click Allow if a "would like to access data from other apps" prompt is showing. On macOS 27 there is no prompt: open System Settings → Privacy & Security → Files & Folders, find Things MCP, and turn on "Data shared by Things and affiliated apps". Then retry.',
           ),
         ),
       LOCATE_TIMEOUT_MS,
