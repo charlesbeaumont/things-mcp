@@ -103,6 +103,12 @@ function optString(args: Args, key: string): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
+// Things clears a field when it receives an empty value, so updates keep "".
+function clearableString(args: Args, key: string): string | undefined {
+  const v = args[key];
+  return typeof v === "string" ? v : undefined;
+}
+
 function optBool(args: Args, key: string): boolean | undefined {
   const v = args[key];
   return typeof v === "boolean" ? v : undefined;
@@ -663,9 +669,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
     properties: {
       id: { ...STR, description: "UUID of the todo to update (from any read tool's output)" },
       title: STR,
-      notes: STR,
+      notes: { ...STR, description: 'Replaces existing notes; "" clears them' },
       when: STR,
-      deadline: STR,
+      deadline: { ...STR, description: 'YYYY-MM-DD; "" clears the deadline' },
       tags: { ...STR_ARR, description: "Replaces existing tags" },
       checklist_items: STR_ARR,
       completed: BOOL,
@@ -716,9 +722,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
           id,
           attributes: {
             title: optString(r, "title"),
-            notes: optString(r, "notes"),
+            notes: clearableString(r, "notes"),
             when: optString(r, "when"),
-            deadline: optString(r, "deadline"),
+            deadline: clearableString(r, "deadline"),
             tags: optStringArray(r, "tags"),
             ...(checklist ? { "checklist-items": checklist } : {}),
             completed: optBool(r, "completed"),
@@ -768,9 +774,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
       properties: {
         id: { ...STR, description: "UUID of the project to update" },
         title: { ...STR, description: "New title" },
-        notes: { ...STR, description: "New notes" },
+        notes: { ...STR, description: 'New notes; "" clears them' },
         when: { ...STR, description: "New schedule" },
-        deadline: { ...STR, description: "New deadline (YYYY-MM-DD)" },
+        deadline: { ...STR, description: 'New deadline (YYYY-MM-DD); "" clears it' },
         tags: { ...STR_ARR, description: "New tags (replaces existing)" },
         completed: { ...BOOL, description: "Mark as completed" },
         canceled: { ...BOOL, description: "Mark as canceled" },
@@ -786,9 +792,9 @@ export function buildTools(db: ThingsDB): ToolDef[] {
         {
           id,
           title: optString(a, "title"),
-          notes: optString(a, "notes"),
+          notes: clearableString(a, "notes"),
           when: optString(a, "when"),
-          deadline: optString(a, "deadline"),
+          deadline: clearableString(a, "deadline"),
           tags: optStringArray(a, "tags"),
           completed: optBool(a, "completed"),
           canceled: optBool(a, "canceled"),

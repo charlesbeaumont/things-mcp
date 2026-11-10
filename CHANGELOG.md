@@ -25,6 +25,10 @@ Ships as a Claude Desktop extension. Tools gain structured output and a confirma
 - The server answers `initialize` and `tools/list` before touching the Things database. It opens the database on the first tool call. Previously a pending macOS "access data from other apps" prompt blocked startup, and Cowork reported "Unable to connect to extension server". If access is still blocked after 20 s, the tool call returns an error explaining how to allow it.
 - `get_todos` and `get_headings` with an unknown `project_uuid` now return `isError: true`. The message text is unchanged.
 
+### Fixed
+
+- `update_todos` and `update_project` can clear a deadline or notes again. Pass `deadline: ""` or `notes: ""`. The server used to drop empty strings, so Things never received the clear.
+
 ### Verified
 
 - Installed a quarantined `.mcpb` (mimicking a GitHub download) by double-click. Claude Desktop kept the binary's exec bit and stripped the quarantine flag, so the manifest launches the binary directly with no `sh -c` wrapper.
