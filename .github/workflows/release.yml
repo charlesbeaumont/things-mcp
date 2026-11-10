@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Dry runs build and pack without publishing; the .mcpb lands as a workflow artifact.
+  pull_request:
+    paths:
+      - manifest.json
+      - icon.png
+      - pack-mcpb.sh
+      - .github/workflows/release.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,6 +21,11 @@ jobs:
     # macos-14 is arm64 by default; bun build --compile produces a native
     # arm64 Mach-O and Bun's cross-compile from x86_64 is unreliable.
     runs-on: macos-14
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-test' }}
+      # Optional. Without them sign-binary.sh signs ad-hoc and the build still ships.
+      SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+      SIGN_P12_PASSWORD: ${{ secrets.MACOS_SIGN_P12_PASSWORD }}
     steps:
       - uses: actions/checkout@v6
 
@@ -26,20 +39,53 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Import signing certificate
+        if: env.SIGN_P12 != ''
+        run: |
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          security create-keychain -p "" "$KC"
+          security set-keychain-settings "$KC"
+          security unlock-keychain -p "" "$KC"
+          echo "$SIGN_P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$SIGN_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/sign.p12"
+
       - name: Build binary
-        run: bun run build
+        run: |
+          bun run build
+          codesign -dv bin/things-mcp 2>&1 | grep -E "Identifier|Authority|Signature"
 
       - name: Stage versioned asset
-        run: cp bin/things-mcp things-mcp-${{ github.ref_name }}-darwin-arm64
+        run: cp bin/things-mcp things-mcp-$TAG-darwin-arm64
 
       - name: Verify binary
         run: |
-          file things-mcp-${{ github.ref_name }}-darwin-arm64
-          ls -lh things-mcp-${{ github.ref_name }}-darwin-arm64
+          file things-mcp-$TAG-darwin-arm64
+          ls -lh things-mcp-$TAG-darwin-arm64
 
-      - name: Create/update release with binary
+      - name: Pack Claude Desktop extension
+        run: |
+          ./pack-mcpb.sh "${TAG#v}"
+          mv dist/things-mcp-$TAG.mcpb .
+          unzip -Z things-mcp-$TAG.mcpb
+
+      - name: Upload dry-run artifacts
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: things-mcp-${{ env.TAG }}
+          path: |
+            things-mcp-${{ env.TAG }}-darwin-arm64
+            things-mcp-${{ env.TAG }}.mcpb
+
+      - name: Create/update release with binary and extension
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: things-mcp-${{ github.ref_name }}-darwin-arm64
+          files: |
+            things-mcp-${{ github.ref_name }}-darwin-arm64
+            things-mcp-${{ github.ref_name }}.mcpb
           generate_release_notes: true
           fail_on_unmatched_files: true

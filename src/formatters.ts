@@ -34,7 +34,7 @@ function todayLocalIso(): string {
  * column. Raw start is just Inbox/Anytime/Someday; the UI buckets are
  * Inbox/Today/Upcoming/Anytime/Someday and derive from start + startDate.
  */
-function effectiveListLabel(todo: Task): { label: string; inherited: boolean } | null {
+export function effectiveListLabel(todo: Task): { label: string; inherited: boolean } | null {
   if (!todo.start) return null;
   const parentStart = todo.project_start ?? todo.project_of_heading_start ?? null;
   if (parentStart === "Someday" && todo.start !== "Someday") {
